@@ -1,0 +1,21 @@
+# Runtime output. These folders contain machine-specific data (system
+# inventory, installed software, backups of registry values) and must never
+# be committed. Only the placeholder files are tracked.
+/Backups/*
+!/Backups/.gitkeep
+/Reports/*
+!/Reports/.gitkeep
+/Logs/*
+!/Logs/.gitkeep
+
+# Local, machine-specific compatibility requirements. Copy
+# Config/Compatibility.example.json to create it.
+/Config/Compatibility.json
+
+# Repository-local tooling (for example Pester, saved by
+# Tests/Invoke-WinLeanTests.ps1 -Bootstrap) and test output.
+/.tools/
+/TestResults/
+
+# Temporary files written by atomic file replacement.
+*.tmp

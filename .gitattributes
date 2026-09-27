@@ -1,0 +1,6 @@
+* text=auto
+
+# PowerShell sources use CRLF on Windows checkouts.
+*.ps1  text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf
