@@ -1,0 +1,19 @@
+{
+  "$schema": "../Schemas/profile.schema.json",
+  "schemaVersion": 1,
+  "name": "Safe",
+  "description": "General cleanup suitable for almost every Windows 11 system: documented privacy and recommendation settings plus basic File Explorer preferences. Low risk only; core Windows services, security and updates are untouched.",
+  "extends": null,
+  "rules": [
+    "privacy.advertising-id.disable",
+    "privacy.tailored-experiences.disable",
+    "privacy.language-list-web-access.disable",
+    "recommendations.settings-online-tips.disable",
+    "recommendations.windows-tips.disable",
+    "recommendations.consumer-experiences.disable",
+    "explorer.file-extensions.show"
+  ],
+  "exclude": [],
+  "maxRisk": "Low",
+  "allowIrreversible": false
+}

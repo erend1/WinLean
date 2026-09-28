@@ -1,0 +1,46 @@
+{
+  "$schema": "../../Schemas/rule.schema.json",
+  "schemaVersion": 1,
+  "id": "privacy.language-list-web-access.disable",
+  "name": "Do not let websites access the language list",
+  "category": "Privacy",
+  "description": "Turns off 'Let websites show me locally relevant content by accessing my language list' (Settings > Privacy & security > General) by setting HttpAcceptLanguageOptOut = 1 (REG_DWORD) in HKCU\\Control Panel\\International\\User Profile. This is the same per-user preference the Settings toggle controls.",
+  "rationale": "Keeps the full list of the user's Windows languages from being offered to websites, which reduces information available for tracking and fingerprinting.",
+  "risk": "Low",
+  "reversible": true,
+  "requiresReboot": false,
+  "takesEffect": "SignOut",
+  "windows": {
+    "minBuild": 22000,
+    "maxValidatedBuild": 26200
+  },
+  "conditions": [],
+  "dependencies": [],
+  "conflicts": [],
+  "effects": [
+    "Windows does not let websites access the user's language list to show locally relevant content."
+  ],
+  "sideEffects": [
+    "Websites that relied on the Windows language list may not select a matching language automatically; browsers keep using their own language settings."
+  ],
+  "notes": [
+    "Windows default: the value does not exist and the setting is on.",
+    "Per-user preference; no Administrator rights are needed and the user can change it back in Settings at any time."
+  ],
+  "references": [
+    {
+      "title": "Microsoft Learn - Manage connections from Windows operating system components to Microsoft services, 18.1 General (HttpAcceptLanguageOptOut)",
+      "url": "https://learn.microsoft.com/en-us/windows/privacy/manage-connections-from-windows-operating-system-components-to-microsoft-services"
+    }
+  ],
+  "resources": [
+    {
+      "type": "RegistryValue",
+      "path": "HKCU:\\Control Panel\\International\\User Profile",
+      "name": "HttpAcceptLanguageOptOut",
+      "valueType": "DWord",
+      "value": 1
+    }
+  ],
+  "tags": ["web", "preference"]
+}

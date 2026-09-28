@@ -1,0 +1,47 @@
+{
+  "$schema": "../../Schemas/rule.schema.json",
+  "schemaVersion": 1,
+  "id": "explorer.file-extensions.show",
+  "name": "Show file name extensions",
+  "category": "Explorer",
+  "description": "Shows file name extensions for known file types in File Explorer (View > Show > File name extensions; Settings > System > Advanced > File Explorer > Show file extensions) by setting HideFileExt = 0 (REG_DWORD) in HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced.",
+  "rationale": "Visible extensions make it harder to disguise a program as a document (for example 'invoice.pdf.exe') and remove ambiguity when working with files.",
+  "risk": "Low",
+  "reversible": true,
+  "requiresReboot": false,
+  "takesEffect": "ExplorerRestart",
+  "windows": {
+    "minBuild": 22000,
+    "maxValidatedBuild": 26200
+  },
+  "conditions": [],
+  "dependencies": [],
+  "conflicts": [],
+  "effects": [
+    "File Explorer shows extensions such as .exe, .pdf and .txt for all files."
+  ],
+  "sideEffects": [
+    "File names appear longer, and renaming a file shows (and can change) its extension; File Explorer warns before an extension is changed."
+  ],
+  "notes": [
+    "Windows default: HideFileExt = 1 (extensions hidden).",
+    "Microsoft's Microsoft.Windows.Developer DSC module (WindowsExplorer resource) uses HideFileExt = 0 for 'Show' and 1 for 'Hide', and restarts File Explorer to apply the change. WinLean does not restart File Explorer; open windows update after a refresh, a File Explorer restart or signing out.",
+    "Per-user preference; no Administrator rights are needed."
+  ],
+  "references": [
+    {
+      "title": "microsoft/winget-dsc - Microsoft.Windows.Developer module, WindowsExplorer resource (HideFileExt)",
+      "url": "https://github.com/microsoft/winget-dsc/blob/main/resources/Microsoft.Windows.Developer/Microsoft.Windows.Developer.psm1"
+    }
+  ],
+  "resources": [
+    {
+      "type": "RegistryValue",
+      "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+      "name": "HideFileExt",
+      "valueType": "DWord",
+      "value": 0
+    }
+  ],
+  "tags": ["file-explorer", "security-hygiene", "preference"]
+}

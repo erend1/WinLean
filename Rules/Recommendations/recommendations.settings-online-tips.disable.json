@@ -1,0 +1,47 @@
+{
+  "$schema": "../../Schemas/rule.schema.json",
+  "schemaVersion": 1,
+  "id": "recommendations.settings-online-tips.disable",
+  "name": "Do not retrieve online tips in Settings",
+  "category": "Recommendations",
+  "description": "Configures the Group Policy 'Allow Online Tips' (Computer Configuration > Administrative Templates > Control Panel) with online tips not allowed, by setting AllowOnlineTips = 0 (REG_DWORD) in HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer.",
+  "rationale": "Settings no longer contacts Microsoft content services to download tips and help content, which removes promotional and suggested content from Settings and the network requests that fetch it.",
+  "risk": "Low",
+  "reversible": true,
+  "requiresReboot": false,
+  "takesEffect": "SignOut",
+  "windows": {
+    "minBuild": 22000,
+    "maxValidatedBuild": 26200
+  },
+  "conditions": [],
+  "dependencies": [],
+  "conflicts": [],
+  "effects": [
+    "The Settings app does not retrieve online tips and help content from Microsoft content services."
+  ],
+  "sideEffects": [
+    "Online help links and tips that Settings would download are not shown; local Settings functionality is unchanged.",
+    "Applies to every user account on the device."
+  ],
+  "notes": [
+    "Policy definition ControlPanel.admx, policy AllowOnlineTips (class Machine): boolean element 'AllowOnlineTips', true = 1, false = 0. Policy CSP Settings/AllowOnlineTips documents 0 as 'Not allowed'.",
+    "Requires Administrator rights (the value is stored under HKLM)."
+  ],
+  "references": [
+    {
+      "title": "Microsoft Learn - Policy CSP Settings: AllowOnlineTips (group policy mapping: ControlPanel.admx)",
+      "url": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-settings#allowonlinetips"
+    }
+  ],
+  "resources": [
+    {
+      "type": "RegistryValue",
+      "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+      "name": "AllowOnlineTips",
+      "valueType": "DWord",
+      "value": 0
+    }
+  ],
+  "tags": ["settings-app", "group-policy"]
+}

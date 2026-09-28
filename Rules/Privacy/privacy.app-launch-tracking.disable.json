@@ -1,0 +1,47 @@
+{
+  "$schema": "../../Schemas/rule.schema.json",
+  "schemaVersion": 1,
+  "id": "privacy.app-launch-tracking.disable",
+  "name": "Stop tracking app launches for Start and search",
+  "category": "Privacy",
+  "description": "Turns off 'Let Windows improve Start and search results by tracking app launches' (Settings > Privacy & security > General) by setting Start_TrackProgs = 0 (REG_DWORD) in HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced.",
+  "rationale": "Windows stops recording which apps the user launches for Start and search personalization, reducing locally collected usage history.",
+  "risk": "Low",
+  "reversible": true,
+  "requiresReboot": false,
+  "takesEffect": "SignOut",
+  "windows": {
+    "minBuild": 22000,
+    "maxValidatedBuild": 26200
+  },
+  "conditions": [],
+  "dependencies": [],
+  "conflicts": [],
+  "effects": [
+    "Windows no longer tracks app launches to personalize Start and search results."
+  ],
+  "sideEffects": [
+    "Start no longer shows a list of most used apps, and 'Show most used apps' in Settings > Personalization > Start cannot be turned on while tracking is off.",
+    "Search results are no longer ranked by how often apps are launched."
+  ],
+  "notes": [
+    "Windows default: the setting is on (Start_TrackProgs = 1 or not set).",
+    "Per-user preference; no Administrator rights are needed. Included in Lean rather than Safe because it removes a visible Start feature."
+  ],
+  "references": [
+    {
+      "title": "Microsoft Learn - Manage connections from Windows operating system components to Microsoft services, 18.1 General (Start_TrackProgs)",
+      "url": "https://learn.microsoft.com/en-us/windows/privacy/manage-connections-from-windows-operating-system-components-to-microsoft-services"
+    }
+  ],
+  "resources": [
+    {
+      "type": "RegistryValue",
+      "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+      "name": "Start_TrackProgs",
+      "valueType": "DWord",
+      "value": 0
+    }
+  ],
+  "tags": ["start-menu", "search", "preference"]
+}

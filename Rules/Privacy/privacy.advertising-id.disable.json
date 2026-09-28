@@ -1,0 +1,53 @@
+{
+  "$schema": "../../Schemas/rule.schema.json",
+  "schemaVersion": 1,
+  "id": "privacy.advertising-id.disable",
+  "name": "Turn off the advertising ID",
+  "category": "Privacy",
+  "description": "Enables the Group Policy 'Turn off the advertising ID' (Computer Configuration > Administrative Templates > System > User Profiles) by setting DisabledByGroupPolicy = 1 (REG_DWORD) in HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AdvertisingInfo. The advertising ID is turned off for every account on the device.",
+  "rationale": "Apps can use the advertising ID to correlate a person's activity across apps for personalized advertising. The documented policy removes that identifier without affecting how apps work.",
+  "risk": "Low",
+  "reversible": true,
+  "requiresReboot": false,
+  "takesEffect": "SignOut",
+  "windows": {
+    "minBuild": 22000,
+    "maxValidatedBuild": 26200
+  },
+  "conditions": [],
+  "dependencies": [],
+  "conflicts": [],
+  "effects": [
+    "The advertising ID is turned off; apps cannot use it for experiences across apps.",
+    "Applies to every user account on the device."
+  ],
+  "sideEffects": [
+    "The advertising ID option in Settings > Privacy & security > General is managed by the policy and cannot be turned back on by users while the policy is set.",
+    "Ads shown inside apps may be less relevant."
+  ],
+  "notes": [
+    "Policy definition UserProfiles.admx, policy DisableAdvertisingId (class Machine): key Software\\Policies\\Microsoft\\Windows\\AdvertisingInfo, value DisabledByGroupPolicy, enabled value 1, disabled value 0.",
+    "Microsoft's privacy guidance additionally mentions HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo\\Enabled = 0. WinLean does not set it: its semantics are not documented, while the policy alone is documented to turn the ID off.",
+    "Requires Administrator rights (the value is stored under HKLM)."
+  ],
+  "references": [
+    {
+      "title": "Microsoft Learn - Policy CSP Privacy: DisableAdvertisingId (group policy mapping: UserProfiles.admx, DisabledByGroupPolicy)",
+      "url": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-privacy#disableadvertisingid"
+    },
+    {
+      "title": "Microsoft Learn - Manage connections from Windows operating system components to Microsoft services, 18.1 General",
+      "url": "https://learn.microsoft.com/en-us/windows/privacy/manage-connections-from-windows-operating-system-components-to-microsoft-services"
+    }
+  ],
+  "resources": [
+    {
+      "type": "RegistryValue",
+      "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\AdvertisingInfo",
+      "name": "DisabledByGroupPolicy",
+      "valueType": "DWord",
+      "value": 1
+    }
+  ],
+  "tags": ["advertising", "group-policy"]
+}

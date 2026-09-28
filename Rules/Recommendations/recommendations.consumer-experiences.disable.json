@@ -1,0 +1,54 @@
+{
+  "$schema": "../../Schemas/rule.schema.json",
+  "schemaVersion": 1,
+  "id": "recommendations.consumer-experiences.disable",
+  "name": "Turn off Microsoft consumer experiences",
+  "category": "Recommendations",
+  "description": "Enables the Group Policy 'Turn off Microsoft consumer experiences' (Computer Configuration > Administrative Templates > Windows Components > Cloud Content) by setting DisableWindowsConsumerFeatures = 1 (REG_DWORD) in HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent. Only effective on Enterprise and Education editions.",
+  "rationale": "Stops consumer-oriented experiences such as Start suggestions, membership notifications and post-setup app installs and redirect tiles, which add promotional content and unrequested apps.",
+  "risk": "Low",
+  "reversible": true,
+  "requiresReboot": false,
+  "takesEffect": "SignOut",
+  "windows": {
+    "minBuild": 22000,
+    "maxValidatedBuild": 26200,
+    "editions": ["Enterprise", "EnterpriseN", "EnterpriseS", "EnterpriseSN", "Education", "EducationN", "IoTEnterprise", "IoTEnterpriseS"]
+  },
+  "conditions": [],
+  "dependencies": [],
+  "conflicts": [],
+  "effects": [
+    "Users no longer see personalized recommendations from Microsoft and notifications about their Microsoft account.",
+    "Consumer experiences such as Start suggestions and post-setup app installs are turned off."
+  ],
+  "sideEffects": [
+    "Microsoft account notifications (for example reminders to finish setting up the account) are not shown.",
+    "Applies to every user account on the device."
+  ],
+  "notes": [
+    "Policy definition CloudContent.admx, policy DisableWindowsConsumerFeatures (class Machine): enabled value 1, disabled value 0.",
+    "The policy explanation states that it only applies to Enterprise and Education SKUs, and the Policy CSP (Experience/AllowWindowsConsumerFeatures) lists it as not applicable to Pro.",
+    "Requires Administrator rights (the value is stored under HKLM)."
+  ],
+  "references": [
+    {
+      "title": "Microsoft Learn - Policy CSP Experience: AllowWindowsConsumerFeatures (group policy mapping: CloudContent.admx, DisableWindowsConsumerFeatures)",
+      "url": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-experience#allowwindowsconsumerfeatures"
+    },
+    {
+      "title": "Microsoft Learn - Manage connections from Windows operating system components to Microsoft services, 18.16 Feedback & diagnostics",
+      "url": "https://learn.microsoft.com/en-us/windows/privacy/manage-connections-from-windows-operating-system-components-to-microsoft-services"
+    }
+  ],
+  "resources": [
+    {
+      "type": "RegistryValue",
+      "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent",
+      "name": "DisableWindowsConsumerFeatures",
+      "valueType": "DWord",
+      "value": 1
+    }
+  ],
+  "tags": ["promotional-content", "group-policy"]
+}

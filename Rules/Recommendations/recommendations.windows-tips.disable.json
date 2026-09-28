@@ -1,0 +1,49 @@
+{
+  "$schema": "../../Schemas/rule.schema.json",
+  "schemaVersion": 1,
+  "id": "recommendations.windows-tips.disable",
+  "name": "Do not show Windows tips",
+  "category": "Recommendations",
+  "description": "Enables the Group Policy 'Do not show Windows tips' (Computer Configuration > Administrative Templates > Windows Components > Cloud Content) by setting DisableSoftLanding = 1 (REG_DWORD) in HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent. Only effective on Enterprise and Education editions.",
+  "rationale": "Removes contextual pop-up tips that explain how to use Windows, which are promotional or distracting on a configured machine.",
+  "risk": "Low",
+  "reversible": true,
+  "requiresReboot": false,
+  "takesEffect": "SignOut",
+  "windows": {
+    "minBuild": 22000,
+    "maxValidatedBuild": 26200,
+    "editions": ["Enterprise", "EnterpriseN", "EnterpriseS", "EnterpriseSN", "Education", "EducationN", "IoTEnterprise", "IoTEnterpriseS"]
+  },
+  "conditions": [],
+  "dependencies": [],
+  "conflicts": [],
+  "effects": [
+    "Users no longer see Windows tips."
+  ],
+  "sideEffects": [
+    "Contextual help pop-ups for new Windows features are not shown.",
+    "Applies to every user account on the device."
+  ],
+  "notes": [
+    "Policy definition CloudContent.admx, policy DisableSoftLanding (class Machine): enabled value 1, disabled value 0.",
+    "The policy explanation states that it only applies to Enterprise and Education SKUs, and the Policy CSP (Experience/AllowWindowsTips) lists it as not applicable to Pro. WinLean therefore marks the rule Unsupported on other editions instead of writing a value that has no effect.",
+    "Requires Administrator rights (the value is stored under HKLM)."
+  ],
+  "references": [
+    {
+      "title": "Microsoft Learn - Policy CSP Experience: AllowWindowsTips (group policy mapping: CloudContent.admx, DisableSoftLanding)",
+      "url": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-experience#allowwindowstips"
+    }
+  ],
+  "resources": [
+    {
+      "type": "RegistryValue",
+      "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent",
+      "name": "DisableSoftLanding",
+      "valueType": "DWord",
+      "value": 1
+    }
+  ],
+  "tags": ["tips", "group-policy"]
+}

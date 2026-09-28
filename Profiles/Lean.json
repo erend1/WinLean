@@ -1,0 +1,13 @@
+{
+  "$schema": "../Schemas/profile.schema.json",
+  "schemaVersion": 1,
+  "name": "Lean",
+  "description": "The recommended everyday profile: Safe plus changes that remove visible but rarely needed Windows features. Feature-dependent (Medium risk) rules will only apply where the compatibility configuration explicitly allows them.",
+  "extends": "Safe",
+  "rules": [
+    "privacy.app-launch-tracking.disable"
+  ],
+  "exclude": [],
+  "maxRisk": "Medium",
+  "allowIrreversible": false
+}

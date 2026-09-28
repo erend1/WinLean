@@ -1,0 +1,48 @@
+{
+  "$schema": "../../Schemas/rule.schema.json",
+  "schemaVersion": 1,
+  "id": "explorer.hidden-files.show",
+  "name": "Show hidden files and folders",
+  "category": "Explorer",
+  "description": "Shows hidden files and folders in File Explorer (View > Show > Hidden items) by setting Hidden = 1 (REG_DWORD) in HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced. Protected operating system files stay hidden: ShowSuperHidden is not changed.",
+  "rationale": "Optional preference for users who work with configuration folders such as AppData; it makes files that applications hide visible and reviewable.",
+  "risk": "Low",
+  "reversible": true,
+  "requiresReboot": false,
+  "takesEffect": "ExplorerRestart",
+  "windows": {
+    "minBuild": 22000,
+    "maxValidatedBuild": 26200
+  },
+  "conditions": [],
+  "dependencies": [],
+  "conflicts": [],
+  "effects": [
+    "File Explorer shows items that have the Hidden attribute (for example the AppData folder)."
+  ],
+  "sideEffects": [
+    "Folders show additional items that applications store hidden; deleting or moving them by mistake can break those applications.",
+    "Protected operating system files remain hidden because ShowSuperHidden is not modified."
+  ],
+  "notes": [
+    "Windows default: Hidden = 2 (hidden items are not shown). WinLean restores whatever value was recorded before applying the rule.",
+    "Microsoft's Microsoft.Windows.Developer DSC module (WindowsExplorer resource) uses Hidden = 1 for 'Show'.",
+    "Not part of Safe or Lean: it is a personal preference rather than an optimization. See Profiles/Example.Custom.json."
+  ],
+  "references": [
+    {
+      "title": "microsoft/winget-dsc - Microsoft.Windows.Developer module, WindowsExplorer resource (Hidden)",
+      "url": "https://github.com/microsoft/winget-dsc/blob/main/resources/Microsoft.Windows.Developer/Microsoft.Windows.Developer.psm1"
+    }
+  ],
+  "resources": [
+    {
+      "type": "RegistryValue",
+      "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+      "name": "Hidden",
+      "valueType": "DWord",
+      "value": 1
+    }
+  ],
+  "tags": ["file-explorer", "preference"]
+}

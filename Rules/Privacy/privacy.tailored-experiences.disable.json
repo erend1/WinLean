@@ -1,0 +1,52 @@
+{
+  "$schema": "../../Schemas/rule.schema.json",
+  "schemaVersion": 1,
+  "id": "privacy.tailored-experiences.disable",
+  "name": "Do not use diagnostic data for tailored experiences",
+  "category": "Privacy",
+  "description": "Enables the per-user Group Policy 'Do not use diagnostic data for tailored experiences' (User Configuration > Administrative Templates > Windows Components > Cloud Content) by setting DisableTailoredExperiencesWithDiagnosticData = 1 (REG_DWORD) in HKCU\\Software\\Policies\\Microsoft\\Windows\\CloudContent.",
+  "rationale": "Stops Windows from using this device's diagnostic data (which may include browser, app and feature usage) to personalize tips, offers and recommendations for the current user.",
+  "risk": "Low",
+  "reversible": true,
+  "requiresReboot": false,
+  "takesEffect": "SignOut",
+  "windows": {
+    "minBuild": 22000,
+    "maxValidatedBuild": 26200
+  },
+  "conditions": [],
+  "dependencies": [],
+  "conflicts": [],
+  "effects": [
+    "Windows does not use diagnostic data from this device to customize lock screen content, Windows tips, Microsoft consumer features and related features for the current user."
+  ],
+  "sideEffects": [
+    "Recommendations, tips and offers may still appear, but they are not personalized (Microsoft: 'they may be less relevant').",
+    "The Tailored experiences option in Settings > Privacy & security > Diagnostics & feedback is managed by the policy for this user."
+  ],
+  "notes": [
+    "Policy definition CloudContent.admx, policy DisableTailoredExperiencesWithDiagnosticData (class User): enabled value 1, disabled value 0.",
+    "The policy does not control Cortana's tailored experiences, which have separate policies.",
+    "HKCU\\Software\\Policies is normally writable by administrators only, so this per-user rule usually needs an elevated PowerShell run by the same user. WinLean checks the real key permissions instead of assuming."
+  ],
+  "references": [
+    {
+      "title": "Microsoft Learn - Policy CSP Experience: AllowTailoredExperiencesWithDiagnosticData (group policy mapping: CloudContent.admx)",
+      "url": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-experience#allowtailoredexperienceswithdiagnosticdata"
+    },
+    {
+      "title": "Microsoft Learn - Manage connections from Windows operating system components to Microsoft services, 18.16 Feedback & diagnostics",
+      "url": "https://learn.microsoft.com/en-us/windows/privacy/manage-connections-from-windows-operating-system-components-to-microsoft-services"
+    }
+  ],
+  "resources": [
+    {
+      "type": "RegistryValue",
+      "path": "HKCU:\\Software\\Policies\\Microsoft\\Windows\\CloudContent",
+      "name": "DisableTailoredExperiencesWithDiagnosticData",
+      "valueType": "DWord",
+      "value": 1
+    }
+  ],
+  "tags": ["diagnostic-data", "recommendations", "group-policy"]
+}

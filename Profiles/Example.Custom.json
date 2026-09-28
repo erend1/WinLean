@@ -1,0 +1,15 @@
+{
+  "$schema": "../Schemas/profile.schema.json",
+  "schemaVersion": 1,
+  "name": "Example.Custom",
+  "description": "Example of a personal profile: builds on Lean, adds the optional 'show hidden files' preference and keeps the language list available to websites. Copy this file to Profiles/<YourName>.json (the file name and 'name' must match) and adjust it.",
+  "extends": "Lean",
+  "rules": [
+    "explorer.hidden-files.show"
+  ],
+  "exclude": [
+    "privacy.language-list-web-access.disable"
+  ],
+  "maxRisk": "Low",
+  "allowIrreversible": false
+}

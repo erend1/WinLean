@@ -1,0 +1,11 @@
+{
+  "$schema": "../Schemas/profile.schema.json",
+  "schemaVersion": 1,
+  "name": "Minimal",
+  "description": "Lean plus more aggressive, feature-specific reductions. Milestone 0.1 adds no rules beyond Lean yet: the aggressive rule categories (optional features, services, deeper AppX cleanup) are planned for later milestones and must pass the rule acceptance criteria first.",
+  "extends": "Lean",
+  "rules": [],
+  "exclude": [],
+  "maxRisk": "Medium",
+  "allowIrreversible": false
+}
