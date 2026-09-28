@@ -16,6 +16,7 @@
         'Invoke-WinLeanAnalyze'
         'Invoke-WinLeanDryRun'
         'Invoke-WinLeanApply'
+        'Invoke-WinLeanRestorePreview'
         'Invoke-WinLeanRestore'
         'Invoke-WinLeanBenchmark'
         'New-WinLeanReport'

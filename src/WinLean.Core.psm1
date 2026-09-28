@@ -23,6 +23,9 @@ foreach ($module in @(
         'WinLean.Inventory'
         'WinLean.Compatibility'
         'WinLean.Policy'
+        'WinLean.Backup'
+        'WinLean.Executor'
+        'WinLean.Restore'
         'WinLean.Report'
     )) {
     Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath ($module + '.psm1'))
@@ -403,10 +406,117 @@ function Get-WinLeanRules {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Apply
+# ---------------------------------------------------------------------------
+
+function Invoke-WinLeanApply {
+    <#
+    .SYNOPSIS
+        Applies the Applicable items of a plan that the user has confirmed.
+    .DESCRIPTION
+        Takes the execution lock, records an inventory (without the slow WinGet section),
+        then lets the executor re-read state, write the backup, apply, verify and roll
+        back failed rules. Returns the execution result.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [PSTypeName('WinLean.Session')] $Session,
+        [Parameter(Mandatory)] [PSTypeName('WinLean.Plan')] $Plan,
+        [switch] $SkipInventory
+    )
+
+    $logger = $Session.logger
+    $lock = Enter-WinLeanLock -Directory $Session.paths.backups
+    try {
+        $inventory = $null
+        if (@($Plan.items | Where-Object { $_.status -eq 'Applicable' }).Count -gt 0 -and -not $SkipInventory) {
+            Write-WinLeanLog -Logger $logger -Message 'Recording inventory for the backup'
+            $inventory = Invoke-WinLeanInventoryCollection -Session $Session -ExcludeSection @('wingetPackages')
+        }
+        $catalog = Get-WinLeanSessionCatalog -Session $Session
+        $execution = Invoke-WinLeanExecution -Plan $Plan -Catalog $catalog -BackupRoot $Session.paths.backups -RunId $Session.runId `
+            -Logger $logger -Identity $Session.identity -Platform $Session.platform -Inventory $inventory
+        $summary = $execution.summary
+        $level = if ($summary.failed -gt 0) { 'WARN' } else { 'INFO' }
+        Write-WinLeanLog -Logger $logger -Level $level -Message ("Execution {0}: {1} applied and verified, {2} already satisfied, {3} failed" -f `
+                $execution.status, $summary.succeeded, $summary.alreadySatisfied, $summary.failed) -Data @{ backupId = $execution.backupId }
+        return $execution
+    }
+    finally {
+        Exit-WinLeanLock -Lock $lock
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Restore and backups
+# ---------------------------------------------------------------------------
+
+function Invoke-WinLeanRestorePreview {
+    <#
+    .SYNOPSIS
+        Loads a backup ('Latest' or an id) and returns the restore plan. Read-only.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [PSTypeName('WinLean.Session')] $Session,
+        [string] $BackupId = 'Latest',
+        [switch] $Force
+    )
+
+    $backup = Get-WinLeanBackup -Root $Session.paths.backups -Id $BackupId
+    Write-WinLeanLog -Logger $Session.logger -Message "Backup $($backup.id) loaded ($(@($backup.changes).Count) recorded change(s))"
+    $plan = Get-WinLeanRestorePlan -Backup $backup -Identity $Session.identity -Force:$Force
+    if (-not $plan.sameUser -and @($plan.items | Where-Object { $_.scope -ne 'Machine' }).Count -gt 0) {
+        Write-WinLeanLog -Logger $Session.logger -Level WARN -Message "The backup was recorded by '$($plan.recordedBy)'. Its per-user values can only be restored by that user."
+    }
+    return $plan
+}
+
+function Invoke-WinLeanRestore {
+    <#
+    .SYNOPSIS
+        Executes a restore plan the user has confirmed (under the execution lock).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [PSTypeName('WinLean.Session')] $Session,
+        [Parameter(Mandatory)] [PSTypeName('WinLean.RestorePlan')] $RestorePlan
+    )
+
+    $lock = Enter-WinLeanLock -Directory $Session.paths.backups
+    try {
+        $result = Invoke-WinLeanRestorePlan -RestorePlan $RestorePlan -RunId $Session.runId -Logger $Session.logger
+        $summary = $result.summary
+        $level = if ($result.status -eq 'Incomplete') { 'WARN' } else { 'INFO' }
+        Write-WinLeanLog -Logger $Session.logger -Level $level -Message ("Restore {0}: {1} restored, {2} already previous, {3} skipped, {4} blocked, {5} failed" -f `
+                $result.status, $summary.Restored, $summary.NotNeeded, $summary.Skipped, $summary.Blocked, $summary.Failed) -Data @{ backupId = $result.backupId }
+        return $result
+    }
+    finally {
+        Exit-WinLeanLock -Lock $lock
+    }
+}
+
+function Get-WinLeanBackups {
+    <#
+    .SYNOPSIS
+        Lists the backups in the data folder, newest first.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [PSTypeName('WinLean.Session')] $Session)
+
+    @(Get-WinLeanBackupList -Root $Session.paths.backups)
+}
+
 Export-ModuleMember -Function @(
     'New-WinLeanSession'
     'Invoke-WinLeanAnalyze'
     'Invoke-WinLeanDryRun'
+    'Invoke-WinLeanApply'
+    'Invoke-WinLeanRestorePreview'
+    'Invoke-WinLeanRestore'
+    'Get-WinLeanBackups'
     'Test-WinLeanConfiguration'
     'Get-WinLeanRules'
 )

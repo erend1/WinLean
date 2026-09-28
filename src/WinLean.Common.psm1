@@ -553,7 +553,8 @@ function Write-WinLeanJsonFile {
     $temporaryPath = $fullPath + '.tmp'
     [System.IO.File]::WriteAllText($temporaryPath, $json + [Environment]::NewLine, $script:Utf8NoBom)
     if ([System.IO.File]::Exists($fullPath)) {
-        [System.IO.File]::Replace($temporaryPath, $fullPath, $null)
+        # [NullString]::Value: PowerShell would pass $null to a .NET string parameter as ''.
+        [System.IO.File]::Replace($temporaryPath, $fullPath, [NullString]::Value)
     }
     else {
         [System.IO.File]::Move($temporaryPath, $fullPath)

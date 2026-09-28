@@ -315,6 +315,157 @@ function Format-WinLeanIssueText {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Execution, restore and backups
+# ---------------------------------------------------------------------------
+
+function Format-WinLeanExecutionText {
+    <#
+    .SYNOPSIS
+        Console summary after -Apply.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] $Execution,
+        [string] $BasePath
+    )
+
+    $summary = $Execution.summary
+    ''
+    'WINLEAN EXECUTION'
+    $script:Rule
+    Format-WinLeanLabel -Label 'Status' -Value $Execution.status -Indent 0 -Width 16
+    Format-WinLeanLabel -Label 'Rules' -Value ('{0} applied and verified, {1} already satisfied, {2} failed' -f $summary.succeeded, $summary.alreadySatisfied, $summary.failed) -Indent 0 -Width 16
+    if ($Execution.backupPath) {
+        $backupText = if ($BasePath) { Get-WinLeanRelativePath -Path $Execution.backupPath -BasePath $BasePath } else { $Execution.backupPath }
+        Format-WinLeanLabel -Label 'Backup' -Value $backupText -Indent 0 -Width 16
+    }
+    foreach ($result in @($Execution.results | Where-Object { $_.status -eq 'Failed' })) {
+        $rollback = ''
+        if ($result.rollback) {
+            $rollback = if ($result.rollback.restored) { ' (rolled back)' } else { ' (rollback incomplete)' }
+        }
+        '  FAILED {0}: {1} - {2}{3}' -f $result.ruleId, $result.failure.class, $result.failure.message, $rollback
+    }
+    ''
+    'Reboot required: ' + (Format-WinLeanYesNo -Value $summary.rebootRequired)
+    if ($summary.signOutRecommended) {
+        'Sign out (or restart File Explorer) so that every change takes effect.'
+    }
+    if ($Execution.backupId) {
+        "To undo these changes: .\WinLean.ps1 -Restore $($Execution.backupId)"
+    }
+    ''
+}
+
+function Format-WinLeanRestorePlanText {
+    <#
+    .SYNOPSIS
+        Console rendering of a restore plan.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] $RestorePlan
+    )
+
+    $headings = [ordered]@{
+        Restore = 'RESTORE'
+        None    = 'ALREADY IN THE PREVIOUS STATE'
+        Skip    = 'SKIPPED (CHANGED SINCE WINLEAN APPLIED IT)'
+        Blocked = 'BLOCKED'
+    }
+    ''
+    'WINLEAN RESTORE PLAN'
+    ''
+    Format-WinLeanLabel -Label 'Backup' -Value $RestorePlan.backupId -Indent 0 -Width 16
+    Format-WinLeanLabel -Label 'Profile' -Value $RestorePlan.profile -Indent 0 -Width 16
+    Format-WinLeanLabel -Label 'Created' -Value ('{0} by {1}' -f (Format-WinLeanTimestamp -Value $RestorePlan.createdAt), $RestorePlan.recordedBy) -Indent 0 -Width 16
+    if ($RestorePlan.force) {
+        Format-WinLeanLabel -Label 'Mode' -Value '-Force: values changed after WinLean applied them are restored too' -Indent 0 -Width 16
+    }
+    ''
+    'Recorded changes: {0}   Restore: {1}   Already previous: {2}   Skipped: {3}   Blocked: {4}' -f `
+        @($RestorePlan.items).Count, $RestorePlan.summary.Restore, $RestorePlan.summary.None, $RestorePlan.summary.Skip, $RestorePlan.summary.Blocked
+    foreach ($action in $headings.Keys) {
+        $items = @($RestorePlan.items | Where-Object { $_.action -eq $action })
+        if ($items.Count -eq 0) { continue }
+        ''
+        $headings[$action]
+        $script:Rule
+        foreach ($item in $items) {
+            '{0}  ({1})' -f $item.target, $item.ruleId
+            if ($action -eq 'Restore') {
+                '  now: {0}  ->  restore: {1}' -f $item.currentText, $item.beforeText
+            }
+            elseif ($action -ne 'None') {
+                '  now: {0}   WinLean set: {1}   previous: {2}' -f $item.currentText, $item.desiredText, $item.beforeText
+                '  Reason: ' + $item.reason
+            }
+        }
+    }
+    ''
+}
+
+function Format-WinLeanRestoreResultText {
+    <#
+    .SYNOPSIS
+        Console summary after -Restore.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] $Result
+    )
+
+    $summary = $Result.summary
+    ''
+    'WINLEAN RESTORE'
+    $script:Rule
+    Format-WinLeanLabel -Label 'Backup' -Value $Result.backupId -Indent 0 -Width 16
+    Format-WinLeanLabel -Label 'Status' -Value $Result.status -Indent 0 -Width 16
+    Format-WinLeanLabel -Label 'Values' -Value ('{0} restored and verified, {1} already previous, {2} skipped, {3} blocked, {4} failed' -f `
+            $summary.Restored, $summary.NotNeeded, $summary.Skipped, $summary.Blocked, $summary.Failed) -Indent 0 -Width 16
+    foreach ($item in @($Result.results | Where-Object { @('Failed', 'Blocked') -contains $_.status })) {
+        '  {0} {1}: {2}' -f $item.status.ToUpperInvariant(), $item.target, $item.reason
+    }
+    if ($Result.status -eq 'Incomplete') {
+        'Some values were not restored. Fix the cause and run the restore again; values already restored are skipped.'
+    }
+    ''
+}
+
+function Format-WinLeanBackupListText {
+    <#
+    .SYNOPSIS
+        Console table of backups, newest first.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Backups
+    )
+
+    ''
+    'WINLEAN BACKUPS'
+    ''
+    if ($Backups.Count -eq 0) {
+        'No backups yet. A backup is created by every -Apply run that changes something.'
+        ''
+        return
+    }
+    ('{0}{1}{2}{3}{4}' -f 'ID'.PadRight(24), 'PROFILE'.PadRight(16), 'STATUS'.PadRight(24), 'CHANGES'.PadRight(9), 'RESTORE')
+    $script:Rule
+    foreach ($backup in $Backups) {
+        $restore = if ($backup.restoreStatus) { [string]$backup.restoreStatus } else { '-' }
+        ('{0}{1}{2}{3}{4}' -f ([string]$backup.id).PadRight(24), ([string]$backup.profile).PadRight(16), ([string]$backup.status).PadRight(24), ([string]$backup.changeCount).PadRight(9), $restore)
+    }
+    ''
+    "'-Restore Latest' restores the newest backup that has not been restored yet."
+    ''
+}
+
 Export-ModuleMember -Function @(
     'Format-WinLeanAnalysisText'
     'Format-WinLeanPlanText'
@@ -322,4 +473,8 @@ Export-ModuleMember -Function @(
     'Format-WinLeanIssueText'
     'Format-WinLeanCompatibilitySource'
     'Format-WinLeanYesNo'
+    'Format-WinLeanExecutionText'
+    'Format-WinLeanRestorePlanText'
+    'Format-WinLeanRestoreResultText'
+    'Format-WinLeanBackupListText'
 )

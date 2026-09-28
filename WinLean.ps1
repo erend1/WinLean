@@ -16,8 +16,24 @@
     from the Profiles folder, or a path to a profile .json file. Without -Apply this
     produces a dry-run plan only.
 
+.PARAMETER Apply
+    Applies the plan after showing it and asking for confirmation. A backup is written
+    before the first change, and every change is verified. Combine with -WhatIf for a
+    dry run, or with -Confirm:$false to skip the confirmation prompt.
+
 .PARAMETER AllowUntestedBuild
     Includes rules on a Windows build newer than the newest build they were validated on.
+
+.PARAMETER Restore
+    Restores a backup: 'Latest' (the newest backup that has not been restored yet) or a
+    backup id such as 2026-09-27_18-45-12. Shows the restore plan and asks for
+    confirmation. Values changed after WinLean applied them are left alone.
+
+.PARAMETER Force
+    With -Restore: also restores values that changed after WinLean applied them.
+
+.PARAMETER ListBackups
+    Lists backups and their restore status.
 
 .PARAMETER ListRules
     Lists the rule catalog and the profiles that use each rule.
@@ -46,6 +62,12 @@
 .EXAMPLE
     .\WinLean.ps1 -Profile Safe -WhatIf
 
+.EXAMPLE
+    .\WinLean.ps1 -Profile Safe -Apply
+
+.EXAMPLE
+    .\WinLean.ps1 -Restore Latest
+
 .NOTES
     Exit codes: 0 success, 1 completed with failures, 2 invalid input or configuration,
     3 cancelled or precondition not met.
@@ -56,12 +78,27 @@ param(
     [switch] $Analyze,
 
     [Parameter(Mandatory, ParameterSetName = 'Plan')]
+    [Parameter(Mandatory, ParameterSetName = 'Apply')]
     [Alias('Profile')]
     [ValidateNotNullOrEmpty()]
     [string] $ProfileName,
 
+    [Parameter(Mandatory, ParameterSetName = 'Apply')]
+    [switch] $Apply,
+
     [Parameter(ParameterSetName = 'Plan')]
+    [Parameter(ParameterSetName = 'Apply')]
     [switch] $AllowUntestedBuild,
+
+    [Parameter(Mandatory, ParameterSetName = 'Restore')]
+    [ValidateNotNullOrEmpty()]
+    [string] $Restore,
+
+    [Parameter(ParameterSetName = 'Restore')]
+    [switch] $Force,
+
+    [Parameter(Mandatory, ParameterSetName = 'ListBackups')]
+    [switch] $ListBackups,
 
     [Parameter(Mandatory, ParameterSetName = 'ListRules')]
     [switch] $ListRules,
@@ -100,6 +137,9 @@ WinLean - Windows, minus everything you do not intentionally use.
 
   .\WinLean.ps1 -Analyze                     Read-only inventory and summary
   .\WinLean.ps1 -Profile Safe -WhatIf        Dry run: show what the profile would change
+  .\WinLean.ps1 -Profile Safe -Apply         Show the plan, confirm, back up, apply, verify
+  .\WinLean.ps1 -Restore Latest              Restore the newest unrestored backup
+  .\WinLean.ps1 -ListBackups                 List backups and their restore status
   .\WinLean.ps1 -ListRules                   List rules and the profiles that use them
   .\WinLean.ps1 -Validate                    Validate rules, profiles and configuration
 
@@ -159,6 +199,57 @@ try {
             Write-WinLeanConsole -Lines @(Format-WinLeanPlanText -Plan $result -BasePath $session.paths.install)
             Write-WinLeanLog -Logger $logger -Message "Plan saved to $($result.planPath)"
             Write-WinLeanLog -Logger $logger -Message 'Dry run only: no changes were made.'
+        }
+
+        'Apply' {
+            $plan = Invoke-WinLeanDryRun -Session $session -ProfileName $ProfileName -AllowUntestedBuild:$AllowUntestedBuild
+            Write-WinLeanConsole -Lines @(Format-WinLeanPlanText -Plan $plan -BasePath $session.paths.install)
+            $result = $plan
+            $applicable = [int]$plan.summary.counts.Applicable
+            if ($WhatIfPreference) {
+                Write-WinLeanLog -Logger $logger -Message 'Dry run (-WhatIf): no changes were made.'
+                break
+            }
+            if ($applicable -eq 0) {
+                Write-WinLeanLog -Logger $logger -Message 'Nothing to apply: no rule in this plan needs a change.'
+                break
+            }
+            if (-not $PSCmdlet.ShouldProcess("profile '$($plan.profile.name)': $applicable rule(s) listed under APPLY", 'Apply WinLean changes')) {
+                Write-WinLeanLog -Logger $logger -Message 'Cancelled: no changes were made.'
+                $exitCode = $ExitCancelled
+                break
+            }
+            $result = Invoke-WinLeanApply -Session $session -Plan $plan
+            Write-WinLeanConsole -Lines @(Format-WinLeanExecutionText -Execution $result -BasePath $session.paths.data)
+            if (@('CompletedWithFailures', 'Aborted') -contains $result.status) {
+                $exitCode = $ExitFailures
+            }
+        }
+
+        'Restore' {
+            $preview = Invoke-WinLeanRestorePreview -Session $session -BackupId $Restore -Force:$Force
+            Write-WinLeanConsole -Lines @(Format-WinLeanRestorePlanText -RestorePlan $preview)
+            $result = $preview
+            if ($WhatIfPreference) {
+                Write-WinLeanLog -Logger $logger -Message 'Dry run (-WhatIf): nothing was restored.'
+                break
+            }
+            $toRestore = [int]$preview.summary.Restore
+            if ($toRestore -gt 0 -and -not $PSCmdlet.ShouldProcess("backup $($preview.backupId): $toRestore value(s) listed under RESTORE", 'Restore previous values')) {
+                Write-WinLeanLog -Logger $logger -Message 'Cancelled: nothing was restored.'
+                $exitCode = $ExitCancelled
+                break
+            }
+            $result = Invoke-WinLeanRestore -Session $session -RestorePlan $preview
+            Write-WinLeanConsole -Lines @(Format-WinLeanRestoreResultText -Result $result)
+            if ($result.status -eq 'Incomplete') {
+                $exitCode = $ExitFailures
+            }
+        }
+
+        'ListBackups' {
+            $result = @(Get-WinLeanBackups -Session $session)
+            Write-WinLeanConsole -Lines @(Format-WinLeanBackupListText -Backups $result)
         }
 
         'ListRules' {
