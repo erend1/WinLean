@@ -1,0 +1,130 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://winlean.local/schemas/rule.schema.json",
+  "title": "WinLean rule",
+  "description": "A reviewed, declarative WinLean optimization rule. The authoritative validator is src/WinLean.Validation.psm1; this schema provides editor support.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "id", "name", "category", "description", "rationale", "risk", "reversible",
+    "requiresReboot", "takesEffect", "windows", "conditions", "dependencies", "conflicts",
+    "effects", "sideEffects", "references", "resources"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "id": {
+      "description": "Lowercase dotted identifier. The first segment is the category prefix, for example 'privacy.advertising-id.disable'. The file must be named <id>.json.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*)+$"
+    },
+    "name": { "description": "Short human-readable name.", "type": "string", "minLength": 1 },
+    "category": {
+      "description": "Rule category. The rule file lives in Rules/<category>/.",
+      "enum": [
+        "Applications", "Startup", "Services", "ScheduledTasks", "Privacy", "Recommendations", "Features",
+        "Gaming", "Explorer", "Search", "Networking", "Power", "Security", "Development", "ThirdParty"
+      ]
+    },
+    "description": { "description": "Exactly what the rule changes, including the Windows setting it corresponds to.", "type": "string", "minLength": 1 },
+    "rationale": { "description": "Why the change is worth making (its plausible optimization, privacy or usability value).", "type": "string", "minLength": 1 },
+    "risk": {
+      "description": "Low: normally safe. Medium: feature-dependent, needs compatibility conditions. High: may affect servicing, security or broad compatibility.",
+      "enum": ["Low", "Medium", "High"]
+    },
+    "reversible": { "description": "Whether WinLean can restore the previous state. Declarative resources are always reversible.", "type": "boolean" },
+    "requiresReboot": { "description": "True exactly when takesEffect is 'Reboot'.", "type": "boolean" },
+    "takesEffect": {
+      "description": "The latest point at which the change is expected to be fully effective.",
+      "enum": ["Immediately", "ExplorerRestart", "SignOut", "Reboot"]
+    },
+    "windows": {
+      "description": "Supported Windows builds and editions.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minBuild", "maxValidatedBuild"],
+      "properties": {
+        "minBuild": { "description": "Lowest supported build (22000 = Windows 11).", "type": "integer", "minimum": 22000 },
+        "maxBuild": { "description": "Optional hard upper bound (the setting is known to be gone or changed after this build).", "type": ["integer", "null"], "minimum": 22000 },
+        "maxValidatedBuild": { "description": "Newest build the rule was validated against. Newer builds require -AllowUntestedBuild.", "type": "integer", "minimum": 22000 },
+        "editions": {
+          "description": "Optional list of EditionID values (HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\EditionID) the rule is effective on.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9]+$" }
+        }
+      }
+    },
+    "conditions": {
+      "description": "All conditions must be true for the rule to apply. Unknown facts (for example undeclared requirements) skip the rule.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fact", "operator", "value"],
+        "properties": {
+          "fact": {
+            "description": "requirement.<key> (user compatibility requirement), capability.<key> (detected) or system.<key> (build, editionId, installationType, architecture, displayVersion).",
+            "type": "string",
+            "pattern": "^(?:requirement|capability|system)\\.[A-Za-z][A-Za-z0-9]*$"
+          },
+          "operator": { "enum": ["Equals", "NotEquals", "In", "NotIn", "GreaterOrEqual", "LessOrEqual"] },
+          "value": { "description": "Boolean for requirements; array for In/NotIn; number for GreaterOrEqual/LessOrEqual." },
+          "reason": { "description": "Shown in the plan when the condition is not met.", "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "dependencies": {
+      "description": "Rules that must be applied (or already satisfied) first.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*)+$" }
+    },
+    "conflicts": {
+      "description": "Rules that must not be applied together with this rule.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*)+$" }
+    },
+    "effects": { "description": "Expected effects.", "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "sideEffects": { "description": "Possible side effects (write 'None known' only after checking).", "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "notes": { "description": "Additional reviewer notes, for example the Windows default value.", "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "references": {
+      "description": "Sources that document the exact setting (Microsoft documentation, ADMX policy definitions, Microsoft source code).",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "url"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "pattern": "^https://" }
+        }
+      }
+    },
+    "resources": {
+      "description": "The declarative resources the rule manages. Apply, verify and undo are implemented by the resource provider.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/registryValue" }
+    },
+    "tags": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" } }
+  },
+  "definitions": {
+    "registryValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "path", "name"],
+      "properties": {
+        "type": { "const": "RegistryValue" },
+        "path": { "description": "Registry key, for example HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "type": "string", "pattern": "^(?:HKCU|HKLM):\\\\.+" },
+        "name": { "description": "Value name (the unnamed default value is not supported).", "type": "string", "minLength": 1 },
+        "ensure": { "description": "Present (default) sets the value; Absent removes it.", "enum": ["Present", "Absent"] },
+        "valueType": { "enum": ["String", "ExpandString", "MultiString", "DWord", "QWord", "Binary"] },
+        "value": { "description": "DWord/QWord: integer; String/ExpandString: string; MultiString: array of strings; Binary: hex string." }
+      },
+      "if": { "properties": { "ensure": { "const": "Absent" } }, "required": ["ensure"] },
+      "then": { "not": { "anyOf": [{ "required": ["valueType"] }, { "required": ["value"] }] } },
+      "else": { "required": ["valueType", "value"] }
+    }
+  }
+}
