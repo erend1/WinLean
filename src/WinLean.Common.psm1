@@ -795,7 +795,8 @@ function Get-WinLeanInteractiveUserSid {
         $sessionId = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
         $filter = "Name = 'explorer.exe' AND SessionId = $sessionId"
         foreach ($process in @(Get-CimInstance -ClassName Win32_Process -Filter $filter -ErrorAction Stop)) {
-            $owner = Invoke-CimMethod -InputObject $process -MethodName GetOwnerSid -ErrorAction Stop
+            # GetOwnerSid only reads; -WhatIf:$false keeps a caller's -WhatIf from suppressing it.
+            $owner = Invoke-CimMethod -InputObject $process -MethodName GetOwnerSid -ErrorAction Stop -WhatIf:$false -Confirm:$false
             if ($owner.ReturnValue -eq 0 -and $owner.Sid) {
                 return [string]$owner.Sid
             }
