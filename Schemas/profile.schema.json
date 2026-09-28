@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://winlean.local/schemas/profile.schema.json",
+  "title": "WinLean profile",
+  "description": "A named selection of rules. The authoritative validator is src/WinLean.Validation.psm1; this schema provides editor support.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "name", "description", "extends", "rules", "exclude", "maxRisk"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "name": {
+      "description": "Profile name. Must match the file name (Profiles/<name>.json).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "description": { "type": "string", "minLength": 1 },
+    "extends": {
+      "description": "Name of the profile this profile builds on, or null. Inherited rules come first.",
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "rules": {
+      "description": "Rule ids added by this profile, in the order they should be evaluated.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*)+$" }
+    },
+    "exclude": {
+      "description": "Inherited rule ids this profile removes.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*)+$" }
+    },
+    "maxRisk": {
+      "description": "Highest rule risk this profile may contain. Loading fails if a rule exceeds it.",
+      "enum": ["Low", "Medium", "High"]
+    },
+    "allowIrreversible": {
+      "description": "Whether irreversible rules are allowed (default false; never true for Safe or Lean).",
+      "type": "boolean"
+    }
+  }
+}
