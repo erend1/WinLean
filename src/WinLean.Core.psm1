@@ -26,6 +26,7 @@ foreach ($module in @(
         'WinLean.Backup'
         'WinLean.Executor'
         'WinLean.Restore'
+        'WinLean.Benchmark'
         'WinLean.Report'
     )) {
     Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath ($module + '.psm1'))
@@ -423,20 +424,35 @@ function Invoke-WinLeanApply {
     param(
         [Parameter(Mandatory)] [PSTypeName('WinLean.Session')] $Session,
         [Parameter(Mandatory)] [PSTypeName('WinLean.Plan')] $Plan,
-        [switch] $SkipInventory
+        [switch] $SkipInventory,
+        [switch] $SkipBenchmark
     )
 
     $logger = $Session.logger
     $lock = Enter-WinLeanLock -Directory $Session.paths.backups
     try {
         $inventory = $null
-        if (@($Plan.items | Where-Object { $_.status -eq 'Applicable' }).Count -gt 0 -and -not $SkipInventory) {
+        $benchmark = $null
+        $hasWork = @($Plan.items | Where-Object { $_.status -eq 'Applicable' }).Count -gt 0
+        if ($hasWork -and -not $SkipInventory) {
             Write-WinLeanLog -Logger $logger -Message 'Recording inventory for the backup'
             $inventory = Invoke-WinLeanInventoryCollection -Session $Session -ExcludeSection @('wingetPackages')
         }
+        if ($hasWork -and -not $SkipBenchmark) {
+            $benchmark = Invoke-WinLeanBenchmark -Session $Session
+        }
         $catalog = Get-WinLeanSessionCatalog -Session $Session
         $execution = Invoke-WinLeanExecution -Plan $Plan -Catalog $catalog -BackupRoot $Session.paths.backups -RunId $Session.runId `
-            -Logger $logger -Identity $Session.identity -Platform $Session.platform -Inventory $inventory
+            -Logger $logger -Identity $Session.identity -Platform $Session.platform -Inventory $inventory -Benchmark $benchmark
+        if ($execution.backupId) {
+            try {
+                $report = New-WinLeanReport -Session $Session -BackupId $execution.backupId
+                $execution | Add-Member -NotePropertyName 'reportPath' -NotePropertyValue $report.path
+            }
+            catch {
+                Write-WinLeanLog -Logger $logger -Level WARN -Message "The report could not be generated: $($_.Exception.Message)"
+            }
+        }
         $summary = $execution.summary
         $level = if ($summary.failed -gt 0) { 'WARN' } else { 'INFO' }
         Write-WinLeanLog -Logger $logger -Level $level -Message ("Execution {0}: {1} applied and verified, {2} already satisfied, {3} failed" -f `
@@ -498,6 +514,115 @@ function Invoke-WinLeanRestore {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Benchmark and report
+# ---------------------------------------------------------------------------
+
+function Invoke-WinLeanBenchmark {
+    <#
+    .SYNOPSIS
+        Measures background activity and saves the result to Reports\Benchmarks.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [PSTypeName('WinLean.Session')] $Session,
+        [ValidateRange(2, 600)] [int] $SampleCount = 10,
+        [ValidateRange(1, 60)] [int] $IntervalSeconds = 1,
+        [switch] $NoSave
+    )
+
+    Write-WinLeanLog -Logger $Session.logger -Message ("Measuring background activity for about {0} seconds; keep the system idle" -f ($SampleCount * $IntervalSeconds))
+    $benchmark = Measure-WinLeanSystem -SampleCount $SampleCount -IntervalSeconds $IntervalSeconds
+    foreach ($note in @($benchmark.notes)) {
+        Write-WinLeanLog -Logger $Session.logger -Level WARN -Message $note
+    }
+    if (-not $NoSave) {
+        $path = Join-Path -Path $Session.paths.reports -ChildPath ("Benchmarks\{0}-benchmark.json" -f $Session.runId)
+        Write-WinLeanJsonFile -Path $path -InputObject $benchmark
+        $benchmark | Add-Member -NotePropertyName 'path' -NotePropertyValue $path
+        Write-WinLeanLog -Logger $Session.logger -Level DEBUG -Message "Benchmark saved to $path"
+    }
+    return $benchmark
+}
+
+function Get-WinLeanBenchmarkAfter {
+    <#
+    .SYNOPSIS
+        Returns the newest saved benchmark collected after the given time, or $null.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [PSTypeName('WinLean.Session')] $Session,
+        [Parameter(Mandatory)] [System.DateTimeOffset] $Since
+    )
+
+    $directory = Join-Path -Path $Session.paths.reports -ChildPath 'Benchmarks'
+    if (-not [System.IO.Directory]::Exists($directory)) {
+        return $null
+    }
+    $files = [System.IO.Directory]::GetFiles($directory, '*-benchmark.json')
+    [System.Array]::Sort($files, [System.StringComparer]::Ordinal)
+    [System.Array]::Reverse($files)
+    foreach ($file in $files) {
+        try {
+            $benchmark = Read-WinLeanJsonFile -Path $file
+            $collectedAt = ConvertTo-WinLeanDateTimeOffset -Value $benchmark.collectedAt
+            if ($null -ne $collectedAt -and $collectedAt -gt $Since) {
+                return $benchmark
+            }
+        }
+        catch {
+            Write-WinLeanLog -Logger $Session.logger -Level WARN -Message "Ignoring unreadable benchmark '$file': $($_.Exception.Message)"
+        }
+    }
+    return $null
+}
+
+function New-WinLeanReport {
+    <#
+    .SYNOPSIS
+        Writes the Markdown report of an apply run to Reports\<backupId>-report.md.
+    .PARAMETER BackupId
+        'Latest' (the newest backup, restored or not) or a backup id.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [PSTypeName('WinLean.Session')] $Session,
+        [string] $BackupId = 'Latest'
+    )
+
+    $id = $BackupId
+    if ($BackupId -eq 'Latest') {
+        $newest = @(Get-WinLeanBackupList -Root $Session.paths.backups | Where-Object { $_.status -ne 'Unreadable' }) | Select-Object -First 1
+        if ($null -eq $newest) {
+            throw (New-Object -TypeName System.IO.FileNotFoundException -ArgumentList "No WinLean backups were found in '$($Session.paths.backups)'. A report describes an -Apply run; run '.\WinLean.ps1 -Profile <name> -Apply' first, or use -Analyze.")
+        }
+        $id = $newest.id
+    }
+    $backup = Get-WinLeanBackup -Root $Session.paths.backups -Id $id
+
+    $since = ConvertTo-WinLeanDateTimeOffset -Value (Get-WinLeanProperty -InputObject $backup.manifest -Name 'completedAt')
+    if ($null -eq $since) {
+        $since = ConvertTo-WinLeanDateTimeOffset -Value $backup.manifest.createdAt
+    }
+    $after = Get-WinLeanBenchmarkAfter -Session $Session -Since $since
+
+    $restoreFiles = [System.IO.Directory]::GetFiles($backup.path, 'restore-*.json')
+    [System.Array]::Sort($restoreFiles, [System.StringComparer]::Ordinal)
+    $restores = @(foreach ($file in $restoreFiles) { Read-WinLeanJsonFile -Path $file })
+
+    $markdown = ConvertTo-WinLeanMarkdownReport -Backup $backup -BenchmarkAfter $after -Restores $restores -BasePath $Session.paths.data
+    $path = Join-Path -Path $Session.paths.reports -ChildPath ("{0}-report.md" -f $backup.id)
+    Write-WinLeanTextFile -Path $path -Content $markdown
+    Write-WinLeanLog -Logger $Session.logger -Message "Report written: $path"
+    return [pscustomobject]@{
+        path           = $path
+        backupId       = $backup.id
+        benchmarkAfter = ($null -ne $after)
+        markdown       = $markdown
+    }
+}
+
 function Get-WinLeanBackups {
     <#
     .SYNOPSIS
@@ -517,6 +642,8 @@ Export-ModuleMember -Function @(
     'Invoke-WinLeanRestorePreview'
     'Invoke-WinLeanRestore'
     'Get-WinLeanBackups'
+    'Invoke-WinLeanBenchmark'
+    'New-WinLeanReport'
     'Test-WinLeanConfiguration'
     'Get-WinLeanRules'
 )

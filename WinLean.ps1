@@ -35,6 +35,20 @@
 .PARAMETER ListBackups
     Lists backups and their restore status.
 
+.PARAMETER SkipBenchmark
+    With -Apply: do not record a baseline benchmark before applying (saves about 10 s).
+
+.PARAMETER Benchmark
+    Measures background activity (CPU, memory, processes, services, startup entries) and
+    saves the result to Reports\Benchmarks.
+
+.PARAMETER Report
+    Writes the Markdown report of an apply run. The newest benchmark taken after the run
+    is used as the "after" measurement.
+
+.PARAMETER Backup
+    With -Report: the backup (run) to report on: 'Latest' (default) or a backup id.
+
 .PARAMETER ListRules
     Lists the rule catalog and the profiles that use each rule.
 
@@ -68,6 +82,9 @@
 .EXAMPLE
     .\WinLean.ps1 -Restore Latest
 
+.EXAMPLE
+    .\WinLean.ps1 -Benchmark; .\WinLean.ps1 -Report
+
 .NOTES
     Exit codes: 0 success, 1 completed with failures, 2 invalid input or configuration,
     3 cancelled or precondition not met.
@@ -99,6 +116,19 @@ param(
 
     [Parameter(Mandatory, ParameterSetName = 'ListBackups')]
     [switch] $ListBackups,
+
+    [Parameter(ParameterSetName = 'Apply')]
+    [switch] $SkipBenchmark,
+
+    [Parameter(Mandatory, ParameterSetName = 'Benchmark')]
+    [switch] $Benchmark,
+
+    [Parameter(Mandatory, ParameterSetName = 'Report')]
+    [switch] $Report,
+
+    [Parameter(ParameterSetName = 'Report')]
+    [ValidateNotNullOrEmpty()]
+    [string] $Backup = 'Latest',
 
     [Parameter(Mandatory, ParameterSetName = 'ListRules')]
     [switch] $ListRules,
@@ -140,6 +170,8 @@ WinLean - Windows, minus everything you do not intentionally use.
   .\WinLean.ps1 -Profile Safe -Apply         Show the plan, confirm, back up, apply, verify
   .\WinLean.ps1 -Restore Latest              Restore the newest unrestored backup
   .\WinLean.ps1 -ListBackups                 List backups and their restore status
+  .\WinLean.ps1 -Benchmark                   Measure background activity (about 10 s)
+  .\WinLean.ps1 -Report                      Markdown report of the latest apply run
   .\WinLean.ps1 -ListRules                   List rules and the profiles that use them
   .\WinLean.ps1 -Validate                    Validate rules, profiles and configuration
 
@@ -219,8 +251,11 @@ try {
                 $exitCode = $ExitCancelled
                 break
             }
-            $result = Invoke-WinLeanApply -Session $session -Plan $plan
+            $result = Invoke-WinLeanApply -Session $session -Plan $plan -SkipBenchmark:$SkipBenchmark
             Write-WinLeanConsole -Lines @(Format-WinLeanExecutionText -Execution $result -BasePath $session.paths.data)
+            if ($null -ne $result.PSObject.Properties['reportPath']) {
+                Write-WinLeanLog -Logger $logger -Message "Report: $($result.reportPath)"
+            }
             if (@('CompletedWithFailures', 'Aborted') -contains $result.status) {
                 $exitCode = $ExitFailures
             }
@@ -244,6 +279,19 @@ try {
             Write-WinLeanConsole -Lines @(Format-WinLeanRestoreResultText -Result $result)
             if ($result.status -eq 'Incomplete') {
                 $exitCode = $ExitFailures
+            }
+        }
+
+        'Benchmark' {
+            $result = Invoke-WinLeanBenchmark -Session $session
+            Write-WinLeanConsole -Lines @(Format-WinLeanBenchmarkText -Benchmark $result)
+            Write-WinLeanLog -Logger $logger -Message "Benchmark saved to $($result.path)"
+        }
+
+        'Report' {
+            $result = New-WinLeanReport -Session $session -BackupId $Backup
+            if (-not $result.benchmarkAfter) {
+                Write-WinLeanLog -Logger $logger -Message 'No benchmark was taken after this run yet; run .\WinLean.ps1 -Benchmark (ideally after signing out) and then -Report again for a before/after comparison.'
             }
         }
 

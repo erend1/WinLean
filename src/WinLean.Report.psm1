@@ -13,6 +13,7 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'WinLean.Common.psm1')
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'WinLean.Inventory.psm1')
+Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'WinLean.Benchmark.psm1')
 
 $script:Rule = [string]::new([char]0x2500, 64)
 
@@ -466,6 +467,301 @@ function Format-WinLeanBackupListText {
     ''
 }
 
+# ---------------------------------------------------------------------------
+# Benchmark
+# ---------------------------------------------------------------------------
+
+function Format-WinLeanBenchmarkText {
+    <#
+    .SYNOPSIS
+        Console summary of a benchmark.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] $Benchmark
+    )
+
+    $context = $Benchmark.context
+    $power = if ($null -eq $context.onBattery) { 'no battery' } elseif ($context.onBattery) { 'on battery' } else { 'on AC power' }
+    ''
+    'WINLEAN BENCHMARK'
+    $script:Rule
+    Format-WinLeanLabel -Label 'Collected' -Value ('{0} (uptime {1} min, {2})' -f (Format-WinLeanTimestamp -Value $Benchmark.collectedAt), $context.uptimeMinutes, $power) -Indent 0 -Width 16
+    if ($Benchmark.cpu.available -and $Benchmark.cpu.sampleCount -gt 0) {
+        Format-WinLeanLabel -Label 'CPU' -Value ('average {0} %, median {1} %, maximum {2} % ({3} x {4} s samples)' -f `
+                (Format-WinLeanNumber -Value $Benchmark.cpu.averagePercent -Decimals 1), (Format-WinLeanNumber -Value $Benchmark.cpu.medianPercent -Decimals 1),
+                (Format-WinLeanNumber -Value $Benchmark.cpu.maximumPercent -Decimals 1), $Benchmark.cpu.sampleCount, $Benchmark.cpu.sampleIntervalSeconds) -Indent 0 -Width 16
+    }
+    else {
+        Format-WinLeanLabel -Label 'CPU' -Value 'unavailable' -Indent 0 -Width 16
+    }
+    $memory = $Benchmark.memory
+    $commit = if ($null -ne $memory.committedMB) { '; commit charge {0} MB' -f (Format-WinLeanNumber -Value $memory.committedMB) } else { '' }
+    Format-WinLeanLabel -Label 'Memory' -Value ('{0} MB in use of {1} MB ({2} %){3}' -f (Format-WinLeanNumber -Value $memory.inUseMB), (Format-WinLeanNumber -Value $memory.totalMB), (Format-WinLeanNumber -Value $memory.inUsePercent -Decimals 1), $commit) -Indent 0 -Width 16
+    Format-WinLeanLabel -Label 'Processes' -Value $Benchmark.processes.count -Indent 0 -Width 16
+    if ($Benchmark.services) {
+        Format-WinLeanLabel -Label 'Services' -Value ('{0} running, {1} third-party (vendor heuristic)' -f $Benchmark.services.running, $Benchmark.services.runningThirdParty) -Indent 0 -Width 16
+    }
+    if ($Benchmark.startup) {
+        Format-WinLeanLabel -Label 'Startup entries' -Value ('{0} enabled of {1}' -f $Benchmark.startup.enabled, $Benchmark.startup.entries) -Indent 0 -Width 16
+    }
+    $consumers = @($Benchmark.processes.topCpuConsumers)
+    if ($consumers.Count -gt 0) {
+        'Top CPU consumers during the sampling window:'
+        foreach ($consumer in $consumers) {
+            '  {0,-30} {1} %' -f $consumer.name, (Format-WinLeanNumber -Value $consumer.percent -Decimals 1)
+        }
+    }
+    foreach ($note in @($Benchmark.notes)) {
+        'Note: ' + $note
+    }
+    ''
+}
+
+# ---------------------------------------------------------------------------
+# Markdown report
+# ---------------------------------------------------------------------------
+
+function ConvertTo-WinLeanMarkdownCell {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowNull()] $Value)
+
+    if ($null -eq $Value) {
+        return ''
+    }
+    return ([string]$Value).Replace('|', '\|').Replace("`r", ' ').Replace("`n", ' ')
+}
+
+function ConvertTo-WinLeanMarkdownReport {
+    <#
+    .SYNOPSIS
+        Builds the Markdown report of an apply run from its backup.
+    .PARAMETER Backup
+        A loaded backup (Get-WinLeanBackup): manifest, plan, execution, inventory, benchmarkBefore.
+    .PARAMETER BenchmarkAfter
+        A benchmark taken after the run (for example after signing out), if any.
+    .PARAMETER Restores
+        Restore results recorded in the backup.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] $Backup,
+        $BenchmarkAfter,
+        [object[]] $Restores = @(),
+        [string] $BasePath,
+        [string] $GeneratedAt = (Get-WinLeanTimestamp)
+    )
+
+    $manifest = $Backup.manifest
+    $plan = $Backup.plan
+    $execution = $Backup.execution
+    $lines = New-Object -TypeName System.Collections.Generic.List[string]
+    $add = { param([string] $Line = '') $lines.Add($Line) }
+    $cell = { param($Value) ConvertTo-WinLeanMarkdownCell -Value $Value }
+    $backupPath = if ($BasePath) { Get-WinLeanRelativePath -Path $Backup.path -BasePath $BasePath } else { $Backup.path }
+    $status = if ($execution) { $execution.status } else { $manifest.status }
+
+    & $add '# WinLean report'
+    & $add
+    & $add '| Item | Value |'
+    & $add '|---|---|'
+    & $add ('| Generated | {0} |' -f (Format-WinLeanTimestamp -Value $GeneratedAt))
+    & $add ('| WinLean version | {0} |' -f (& $cell $manifest.winLeanVersion))
+    & $add ('| Run / backup id | `{0}` |' -f $Backup.id)
+    & $add ('| Profile | {0} |' -f (& $cell $manifest.profile))
+    & $add ('| Execution status | {0} |' -f (& $cell $status))
+    & $add ('| Backup written | {0} |' -f (Format-WinLeanTimestamp -Value $manifest.createdAt))
+    & $add ('| Execution completed | {0} |' -f $(if ($manifest.completedAt) { Format-WinLeanTimestamp -Value $manifest.completedAt } else { 'not recorded' }))
+
+    # System information
+    & $add
+    & $add '## System information'
+    & $add
+    & $add '| Property | Value |'
+    & $add '|---|---|'
+    if ($Backup.inventory) {
+        $summary = Get-WinLeanInventorySummary -Inventory $Backup.inventory
+        & $add ('| Windows | {0} |' -f (& $cell $summary.windows))
+        & $add ('| CPU | {0} |' -f (& $cell $summary.cpu))
+        & $add ('| Installed memory | {0} |' -f $(if ($summary.memoryGB) { "$($summary.memoryGB) GB" } else { 'unknown' }))
+        & $add ('| GPU | {0} |' -f (& $cell $summary.gpu))
+    }
+    elseif ($manifest.system) {
+        & $add ('| Windows | {0} {1} (build {2}.{3}) |' -f (& $cell $manifest.system.productName), (& $cell $manifest.system.displayVersion), $manifest.system.build, $manifest.system.ubr)
+    }
+    & $add ('| User | {0} (Administrator: {1}) |' -f (& $cell $manifest.user.name), (Format-WinLeanYesNo -Value $manifest.isAdministrator))
+
+    # Profile
+    if ($plan) {
+        & $add
+        & $add '## Profile'
+        & $add
+        & $add ('- Name: **{0}** (inheritance: {1})' -f $plan.profile.name, (@($plan.profile.chain) -join ' > '))
+        & $add ('- Maximum risk: {0}' -f $plan.profile.maxRisk)
+        & $add ('- Rules evaluated: {0}' -f @($plan.items).Count)
+        & $add ('- Excluded by the profile: {0}' -f $(if (@($plan.profile.excluded).Count -gt 0) { (@($plan.profile.excluded) | ForEach-Object { '`' + $_ + '`' }) -join ', ' } else { 'none' }))
+        if ($plan.options -and $plan.options.allowUntestedBuild) {
+            & $add '- `-AllowUntestedBuild` was specified.'
+        }
+
+        # Compatibility
+        $compatibility = $plan.compatibility
+        & $add
+        & $add '## Compatibility configuration'
+        & $add
+        if ($null -eq $compatibility -or -not $compatibility.exists) {
+            & $add 'No compatibility configuration was found. Every requirement was treated as required, so rules with compatibility conditions were skipped.'
+        }
+        else {
+            & $add ('Source: `{0}`' -f $(if ($BasePath) { Get-WinLeanRelativePath -Path $compatibility.source -BasePath $BasePath } else { $compatibility.source }))
+            & $add
+            & $add '| Requirement | Decision |'
+            & $add '|---|---|'
+            foreach ($key in @(Get-WinLeanPropertyNames -InputObject $compatibility.declared)) {
+                $required = [bool](Get-WinLeanProperty -InputObject $compatibility.declared -Name $key)
+                & $add ('| {0} | {1} |' -f $key, $(if ($required) { 'required (preserve)' } else { 'not needed' }))
+            }
+            if (@($compatibility.undeclared).Count -gt 0) {
+                & $add
+                & $add ('Undeclared (treated as required): {0}' -f (@($compatibility.undeclared) -join ', '))
+            }
+        }
+        $capabilityNames = @()
+        if ($compatibility -and $compatibility.capabilities) {
+            $capabilityNames = @(Get-WinLeanPropertyNames -InputObject $compatibility.capabilities)
+        }
+        if ($capabilityNames.Count -gt 0) {
+            & $add
+            & $add ('Detected capabilities: {0}' -f (($capabilityNames | ForEach-Object { '{0} = {1}' -f $_, (Format-WinLeanYesNo -Value (Get-WinLeanProperty -InputObject $compatibility.capabilities -Name $_)) }) -join ', '))
+        }
+    }
+
+    # Benchmark
+    & $add
+    & $add '## Benchmark'
+    & $add
+    if ($null -eq $Backup.benchmarkBefore) {
+        & $add 'No baseline benchmark was recorded for this run (-SkipBenchmark).'
+    }
+    else {
+        $before = $Backup.benchmarkBefore
+        & $add ('- Before: {0} (uptime {1} min)' -f (Format-WinLeanTimestamp -Value $before.collectedAt), $before.context.uptimeMinutes)
+        if ($null -ne $BenchmarkAfter) {
+            & $add ('- After: {0} (uptime {1} min)' -f (Format-WinLeanTimestamp -Value $BenchmarkAfter.collectedAt), $BenchmarkAfter.context.uptimeMinutes)
+        }
+        else {
+            & $add '- After: not captured yet. Sign out (or reboot), let the system settle, run `.\WinLean.ps1 -Benchmark`, then `.\WinLean.ps1 -Report`.'
+        }
+        & $add
+        & $add '| Metric | Before | After | Change |'
+        & $add '|---|---:|---:|---:|'
+        foreach ($row in @(Compare-WinLeanBenchmark -Before $before -After $BenchmarkAfter)) {
+            & $add ('| {0} | {1} | {2} | {3} |' -f $row.metric, $(if ($null -ne $row.before) { $row.before } else { 'n/a' }), $(if ($null -ne $row.after) { $row.after } else { '-' }), $(if ($null -ne $row.change) { $row.change } else { '-' }))
+        }
+        & $add
+        & $add '> A benchmark reflects the moment it was taken. Compare measurements taken under similar conditions (similar uptime, same power source, no user activity); see Docs/Benchmarking.md.'
+    }
+
+    # Rules
+    $results = if ($execution) { @($execution.results) } else { @() }
+    $applied = @($results | Where-Object { $_.status -eq 'Succeeded' })
+    & $add
+    & $add '## Applied rules'
+    & $add
+    if ($applied.Count -eq 0) {
+        & $add 'No rules were applied.'
+    }
+    else {
+        & $add '| Rule | Name | Result |'
+        & $add '|---|---|---|'
+        foreach ($result in $applied) {
+            $changes = @(for ($index = 0; $index -lt @($result.before).Count; $index++) {
+                    $beforeText = @($result.before)[$index].text
+                    $afterText = if ($index -lt @($result.after).Count) { @($result.after)[$index].text } else { '?' }
+                    '{0}: {1} -> {2}' -f @($result.before)[$index].target, $beforeText, $afterText
+                })
+            & $add ('| `{0}` | {1} | Applied and verified. {2} |' -f $result.ruleId, (& $cell $result.name), (& $cell ($changes -join '; ')))
+        }
+    }
+
+    $satisfied = New-Object -TypeName System.Collections.Generic.List[string]
+    foreach ($result in @($results | Where-Object { $_.status -eq 'AlreadySatisfied' })) { $satisfied.Add($result.ruleId) }
+    if ($execution) {
+        foreach ($item in @($execution.notApplied | Where-Object { $_.status -eq 'AlreadySatisfied' })) {
+            if (-not $satisfied.Contains($item.ruleId)) { $satisfied.Add($item.ruleId) }
+        }
+    }
+    & $add
+    & $add '## Already satisfied'
+    & $add
+    & $add $(if ($satisfied.Count -gt 0) { ($satisfied | ForEach-Object { '- `' + $_ + '`' }) -join "`n" } else { 'None.' })
+
+    $notApplied = if ($execution) { @($execution.notApplied | Where-Object { $_.status -ne 'AlreadySatisfied' }) } else { @() }
+    & $add
+    & $add '## Skipped, blocked and unsupported rules'
+    & $add
+    if ($notApplied.Count -eq 0) {
+        & $add 'None.'
+    }
+    else {
+        & $add '| Rule | Status | Reason |'
+        & $add '|---|---|---|'
+        foreach ($item in $notApplied) {
+            & $add ('| `{0}` | {1} | {2} |' -f $item.ruleId, $item.status, (& $cell (@($item.reasons) -join ' ')))
+        }
+    }
+
+    $failed = @($results | Where-Object { $_.status -eq 'Failed' })
+    & $add
+    & $add '## Failed rules'
+    & $add
+    if ($failed.Count -eq 0) {
+        & $add 'None.'
+    }
+    else {
+        & $add '| Rule | Failure | Details | Rollback |'
+        & $add '|---|---|---|---|'
+        foreach ($result in $failed) {
+            $rollback = if ($null -eq $result.rollback) { 'not needed' } elseif ($result.rollback.restored) { 'rolled back' } else { 'incomplete - restore the backup' }
+            & $add ('| `{0}` | {1} | {2} | {3} |' -f $result.ruleId, (& $cell $result.failure.class), (& $cell $result.failure.message), $rollback)
+        }
+    }
+
+    # Backup and restore
+    & $add
+    & $add '## Backup and restore'
+    & $add
+    & $add ('- Backup location: `{0}`' -f $backupPath)
+    & $add ('- Recorded changes: {0}' -f $manifest.changeCount)
+    & $add ('- Undo this run: `.\WinLean.ps1 -Restore {0}` (preview first with `-WhatIf`)' -f $Backup.id)
+    & $add '- WinLean does not create a System Restore point; the backup contains exactly the values WinLean changed.'
+    if (@($Restores).Count -gt 0) {
+        & $add
+        & $add '| Restore run | Status | Restored | Already previous | Skipped | Blocked | Failed |'
+        & $add '|---|---|---:|---:|---:|---:|---:|'
+        foreach ($restore in $Restores) {
+            & $add ('| {0} | {1} | {2} | {3} | {4} | {5} | {6} |' -f (Format-WinLeanTimestamp -Value $restore.completedAt), $restore.status, $restore.summary.Restored, $restore.summary.NotNeeded, $restore.summary.Skipped, $restore.summary.Blocked, $restore.summary.Failed)
+        }
+    }
+
+    # Reboot
+    & $add
+    & $add '## Reboot requirement'
+    & $add
+    if ($execution) {
+        & $add ('- Reboot required: {0}' -f (Format-WinLeanYesNo -Value $execution.summary.rebootRequired))
+        & $add ('- Sign out recommended: {0}' -f $(if ($execution.summary.signOutRecommended) { 'Yes - some changes take full effect after signing out or restarting File Explorer' } else { 'No' }))
+    }
+    else {
+        & $add 'Unknown: the execution record is missing.'
+    }
+    & $add
+    return ($lines.ToArray() -join "`n")
+}
+
 Export-ModuleMember -Function @(
     'Format-WinLeanAnalysisText'
     'Format-WinLeanPlanText'
@@ -477,4 +773,6 @@ Export-ModuleMember -Function @(
     'Format-WinLeanRestorePlanText'
     'Format-WinLeanRestoreResultText'
     'Format-WinLeanBackupListText'
+    'Format-WinLeanBenchmarkText'
+    'ConvertTo-WinLeanMarkdownReport'
 )
