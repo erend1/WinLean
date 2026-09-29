@@ -666,7 +666,9 @@ function ConvertTo-WinLeanMarkdownReport {
     }
 
     # Rules
-    $results = if ($execution) { @($execution.results) } else { @() }
+    # @(if ...): an if statement unrolls arrays, so '= if (...) { @() }' would yield $null
+    # (and $null.Count throws in strict mode).
+    $results = @(if ($execution) { $execution.results })
     $applied = @($results | Where-Object { $_.status -eq 'Succeeded' })
     & $add
     & $add '## Applied rules'
@@ -699,7 +701,7 @@ function ConvertTo-WinLeanMarkdownReport {
     & $add
     & $add $(if ($satisfied.Count -gt 0) { ($satisfied | ForEach-Object { '- `' + $_ + '`' }) -join "`n" } else { 'None.' })
 
-    $notApplied = if ($execution) { @($execution.notApplied | Where-Object { $_.status -ne 'AlreadySatisfied' }) } else { @() }
+    $notApplied = @(if ($execution) { $execution.notApplied | Where-Object { $_.status -ne 'AlreadySatisfied' } })
     & $add
     & $add '## Skipped, blocked and unsupported rules'
     & $add

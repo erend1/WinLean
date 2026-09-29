@@ -1212,9 +1212,10 @@ function Get-WinLeanInventorySummary {
 
     $system = Get-WinLeanInventorySection -Inventory $Inventory -Name 'system'
     $os = if ($system) { $system.os } else { $null }
-    $cpu = if ($system -and $system.cpu.available) { @($system.cpu.data.processors) } else { @() }
+    # @(if ...): an if statement unrolls arrays, so '= if (...) { @() }' would yield $null.
+    $cpu = @(if ($system -and $system.cpu.available) { $system.cpu.data.processors })
     $memory = if ($system -and $system.memory.available) { $system.memory.data } else { $null }
-    $gpu = if ($system -and $system.gpu.available) { @($system.gpu.data.adapters) } else { @() }
+    $gpu = @(if ($system -and $system.gpu.available) { $system.gpu.data.adapters })
 
     $countOf = {
         param([string] $Name, [string] $Property = 'count')
