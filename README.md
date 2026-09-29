@@ -1,5 +1,7 @@
 # WinLean
 
+[![Tests](https://github.com/erend1/WinLean/actions/workflows/tests.yml/badge.svg)](https://github.com/erend1/WinLean/actions/workflows/tests.yml)
+
 > Windows, minus everything you do not intentionally use.
 
 WinLean is a small, testable and reversible configuration framework for Windows 11. It

@@ -6,6 +6,14 @@
     The read-only commands (-Validate, -ListRules, -Profile Safe -WhatIf) run against the
     real repository with Backups/Reports/Logs redirected to TestDrive.
 #>
+BeforeDiscovery {
+    # WinLean applies rules only on Windows 11 client installations. On other systems (for
+    # example the Windows Server images of CI runners) every rule is Unsupported by design,
+    # so the apply/restore cycle is skipped there.
+    $currentVersion = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+    $script:IsWindows11Client = ($currentVersion.InstallationType -eq 'Client') -and ([int]$currentVersion.CurrentBuildNumber -ge 22000)
+}
+
 BeforeAll {
     . (Join-Path $PSScriptRoot '..\Helpers\TestHelpers.ps1')
 
@@ -70,7 +78,7 @@ Describe 'Read-only commands on the real repository' {
     }
 }
 
-Describe 'Apply and restore cycle in a sandbox' {
+Describe 'Apply and restore cycle in a sandbox' -Skip:(-not $script:IsWindows11Client) {
     BeforeAll {
         $base = Get-TestRegistryBase
         $script:Sandbox = "$base\Cli"

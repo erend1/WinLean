@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Evidence standard: rules may be backed by a recorded observation (`evidence`) instead of a
+  documentation reference, for per-user Settings toggles only. Validation enforces the
+  limits (HKCU preferences only, validated builds not newer than the observation).
+- `Tools\Capture-WinLeanEvidence.ps1`: read-only registry snapshots before and after a
+  Settings toggle is changed in a VM, with a Markdown write-up for `Docs\Evidence\`.
+- GitHub Actions workflow running the unit and integration tests.
+
 ## [0.1.0] - 2026-09-29
 
 Milestone 0.1: the architectural foundation.

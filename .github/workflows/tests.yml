@@ -1,0 +1,48 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Validation, unit and integration tests
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Save Pester 5 to .tools (repository-local)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .tools/Modules | Out-Null
+          Save-PSResource -Name Pester -Version '[5.5.0,6.0.0)' -Repository PSGallery -Path .tools/Modules -TrustRepository
+
+      - name: Validate rules, profiles and configuration
+        shell: pwsh
+        run: ./WinLean.ps1 -Validate
+
+      # Integration tests write only to Pester's TestRegistry and TestDrive. The runner is
+      # Windows Server, where WinLean treats every rule as Unsupported; the sandbox
+      # apply/restore cycle therefore only runs on Windows 11 client machines.
+      - name: Unit and integration tests (PowerShell 7)
+        shell: pwsh
+        run: ./Tests/Invoke-WinLeanTests.ps1 -Suite All -OutputPath TestResults/pwsh.xml
+
+      - name: Unit tests (Windows PowerShell 5.1)
+        shell: powershell
+        run: ./Tests/Invoke-WinLeanTests.ps1 -Suite Unit -OutputPath TestResults/windowspowershell.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/
+          if-no-files-found: ignore
