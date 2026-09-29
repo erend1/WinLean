@@ -114,6 +114,16 @@ Describe 'Markdown report' {
     }
 }
 
+Describe 'Label formatting' {
+    It 'separates labels longer than the column from their value' {
+        InModuleScope 'WinLean.Report' {
+            Format-WinLeanLabel -Label 'virtualMachinePlatformEnabled' -Value 'Yes' -Width 26 -Indent 0 | Should -BeExactly 'virtualMachinePlatformEnabled Yes'
+            Format-WinLeanLabel -Label 'CPU' -Value 'x' -Width 6 -Indent 2 | Should -BeExactly '  CPU   x'
+            Format-WinLeanLabel -Label 'GPU' -Value $null -Width 4 -Indent 0 | Should -BeExactly 'GPU unknown'
+        }
+    }
+}
+
 Describe 'Other console text' {
     It 'lists backups or explains that there are none' {
         (Format-WinLeanBackupListText -Backups @()) -join "`n" | Should -BeLike '*No backups yet*'

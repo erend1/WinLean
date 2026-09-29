@@ -48,7 +48,9 @@ function Format-WinLeanLabel {
     )
 
     $text = if ($null -eq $Value -or ($Value -is [string] -and $Value.Length -eq 0)) { 'unknown' } else { [string]$Value }
-    return (' ' * $Indent) + $Label.PadRight($Width) + $text
+    # Labels longer than the column still get one separating space.
+    $paddedLabel = if ($Label.Length -ge $Width) { $Label + ' ' } else { $Label.PadRight($Width) }
+    return (' ' * $Indent) + $paddedLabel + $text
 }
 
 function Format-WinLeanSectionValue {
