@@ -43,6 +43,15 @@ Describe 'Shipped rules' {
         }
     }
 
+    It 'reference evidence files that exist' {
+        foreach ($file in Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'Rules') -Filter '*.json' -Recurse) {
+            $definition = Get-Content -Raw -LiteralPath $file.FullName | ConvertFrom-Json
+            foreach ($observation in @(Get-WinLeanArrayProperty -InputObject $definition -Name 'evidence')) {
+                Test-Path -LiteralPath (Join-Path $script:RepoRoot $observation.file) | Should -BeTrue -Because "$($file.Name) references $($observation.file)"
+            }
+        }
+    }
+
     It 'validate against the JSON schema' -Skip:(-not $script:CanValidateSchemas) {
         $schema = Get-Content -Raw -LiteralPath (Join-Path $script:RepoRoot 'Schemas\rule.schema.json')
         foreach ($file in Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'Rules') -Filter '*.json' -Recurse) {

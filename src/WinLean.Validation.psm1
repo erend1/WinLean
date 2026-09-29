@@ -49,11 +49,17 @@ $script:MinimumWindowsBuild = 22000
 $script:RuleProperties = @(
     '$schema', 'schemaVersion', 'id', 'name', 'category', 'description', 'rationale', 'risk',
     'reversible', 'requiresReboot', 'takesEffect', 'windows', 'conditions', 'dependencies',
-    'conflicts', 'effects', 'sideEffects', 'notes', 'references', 'resources', 'tags'
+    'conflicts', 'effects', 'sideEffects', 'notes', 'references', 'evidence', 'resources', 'tags'
 )
 $script:WindowsProperties = @('minBuild', 'maxBuild', 'maxValidatedBuild', 'editions')
 $script:ConditionProperties = @('fact', 'operator', 'value', 'reason')
 $script:ReferenceProperties = @('title', 'url')
+
+# Recorded observations (evidence standard, see Docs/Rules.md). An observation shows what
+# the Settings app writes when a toggle changes, captured in a disposable VM.
+$script:EvidenceProperties = @('method', 'build', 'file', 'summary')
+$script:EvidenceMethods = @('RegistryDiff', 'ProcessMonitor')
+$script:EvidenceFilePattern = '^Docs/Evidence/[A-Za-z0-9][A-Za-z0-9._-]*\.md$'
 $script:ProfileProperties = @('$schema', 'schemaVersion', 'name', 'description', 'extends', 'rules', 'exclude', 'maxRisk', 'allowIrreversible')
 $script:CompatibilityProperties = @('$schema', 'schemaVersion', 'description', 'requirements')
 
@@ -323,9 +329,11 @@ function Test-WinLeanRuleDefinition {
             & $addError 'Documentation' "'notes' must be an array of non-empty strings."
         }
     }
+    # Sources: documentation references and/or recorded observations (evidence standard).
     $references = Get-WinLeanProperty -InputObject $Definition -Name 'references' -NoEnumerate
-    if (-not (Test-WinLeanEnumerable -Value $references) -or @($references).Count -lt 1) {
-        & $addError 'References' "'references' must list at least one source that documents the setting."
+    $referenceCount = 0
+    if (-not (Test-WinLeanEnumerable -Value $references)) {
+        & $addError 'References' "'references' must be an array (use [] when the rule relies on recorded evidence only)."
     }
     else {
         $index = 0
@@ -335,6 +343,32 @@ function Test-WinLeanRuleDefinition {
             }
             $index++
         }
+        $referenceCount = $index
+    }
+    $evidenceCount = 0
+    $newestObservedBuild = 0
+    if (Test-WinLeanProperty -InputObject $Definition -Name 'evidence') {
+        $evidence = Get-WinLeanProperty -InputObject $Definition -Name 'evidence' -NoEnumerate
+        if (-not (Test-WinLeanEnumerable -Value $evidence)) {
+            & $addError 'Evidence' "'evidence' must be an array of recorded observations."
+        }
+        else {
+            $index = 0
+            foreach ($observation in $evidence) {
+                foreach ($message in @(Test-WinLeanEvidenceDefinition -Evidence $observation)) {
+                    & $addError 'Evidence' "evidence[$index]: $message"
+                }
+                $build = Get-WinLeanProperty -InputObject $observation -Name 'build'
+                if ((Test-WinLeanInteger -Value $build) -and [int]$build -gt $newestObservedBuild) {
+                    $newestObservedBuild = [int]$build
+                }
+                $index++
+            }
+            $evidenceCount = $index
+        }
+    }
+    if ($referenceCount + $evidenceCount -lt 1) {
+        & $addError 'References' "A rule needs at least one source: a reference that documents the setting, or a recorded observation in 'evidence' (see Docs/Rules.md)."
     }
     if (Test-WinLeanProperty -InputObject $Definition -Name 'tags') {
         if (-not (Test-WinLeanStringArray -Value (Get-WinLeanProperty -InputObject $Definition -Name 'tags' -NoEnumerate) -Pattern $script:TagPattern)) {
@@ -358,6 +392,23 @@ function Test-WinLeanRuleDefinition {
         # Every resource type in 0.1 is declarative and restorable from captured state.
         if ($reversible -is [bool] -and -not $reversible) {
             & $addError 'Reversible' "Declarative resources are always restored from captured state; 'reversible' must be true."
+        }
+
+        # Observations can only establish what a user-facing toggle writes: rules without a
+        # documentation reference may only change per-user preferences, and are validated
+        # only up to the newest build on which the behaviour was observed.
+        if ($referenceCount -eq 0 -and $evidenceCount -gt 0) {
+            foreach ($resource in $resources) {
+                $path = [string](Get-WinLeanProperty -InputObject $resource -Name 'path' -Default '')
+                if (-not $path.StartsWith('HKCU:\', [System.StringComparison]::OrdinalIgnoreCase) -or
+                    (Test-WinLeanTextContains -Text ($path + '\') -Value '\Policies\')) {
+                    & $addError 'Evidence' "Rules without a documentation reference may only change per-user preferences (HKCU, outside \Policies\); '$path' needs a documented source."
+                }
+            }
+            $maxValidated = Get-WinLeanProperty -InputObject $windows -Name 'maxValidatedBuild'
+            if ((Test-WinLeanInteger -Value $maxValidated) -and $newestObservedBuild -gt 0 -and [int]$maxValidated -gt $newestObservedBuild) {
+                & $addError 'Evidence' "'windows.maxValidatedBuild' ($maxValidated) is newer than the newest observed build ($newestObservedBuild)."
+            }
         }
     }
 
@@ -494,6 +545,40 @@ function Test-WinLeanReferenceDefinition {
     $url = Get-WinLeanProperty -InputObject $Reference -Name 'url'
     if ($url -isnot [string] -or -not $url.StartsWith('https://', [System.StringComparison]::Ordinal)) {
         "'url' must be an https:// URL"
+    }
+}
+
+function Test-WinLeanEvidenceDefinition {
+    <#
+    .SYNOPSIS
+        Validates one recorded observation: method, build, evidence file and summary.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowNull()] $Evidence)
+
+    if (-not (Test-WinLeanObject -Value $Evidence)) {
+        'an evidence record must be an object with method, build, file and summary'
+        return
+    }
+    foreach ($propertyName in @(Get-WinLeanPropertyNames -InputObject $Evidence)) {
+        if ($script:EvidenceProperties -cnotcontains $propertyName) {
+            "unknown property '$propertyName'"
+        }
+    }
+    if ($script:EvidenceMethods -cnotcontains (Get-WinLeanProperty -InputObject $Evidence -Name 'method')) {
+        "'method' must be one of: $($script:EvidenceMethods -join ', ')"
+    }
+    $build = Get-WinLeanProperty -InputObject $Evidence -Name 'build'
+    if (-not (Test-WinLeanInteger -Value $build) -or [int]$build -lt $script:MinimumWindowsBuild) {
+        "'build' must be the Windows build the observation was made on ($($script:MinimumWindowsBuild) or later)"
+    }
+    $file = Get-WinLeanProperty -InputObject $Evidence -Name 'file'
+    if ($file -isnot [string] -or -not (Test-WinLeanPattern -Text $file -Pattern $script:EvidenceFilePattern -CaseSensitive)) {
+        "'file' must be a Markdown file in Docs/Evidence, for example 'Docs/Evidence/<rule-id>.md'"
+    }
+    if (-not (Test-WinLeanNonEmptyString -Value (Get-WinLeanProperty -InputObject $Evidence -Name 'summary'))) {
+        "'summary' must describe what was observed"
     }
 }
 

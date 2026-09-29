@@ -45,7 +45,9 @@ folklore.
 
 1. **Keep it, document it, investigate it, decide later.** Unknown means "keep".
 2. Only settings documented by Microsoft (ADMX policy definitions, Policy CSP, privacy
-   guidance, Microsoft source code) become rules. Everything else stays in the research log.
+   guidance, Microsoft source code) become rules - or per-user Settings toggles whose effect
+   was recorded in a disposable VM (evidence standard). Everything else stays in the
+   research log.
 3. An undeclared compatibility requirement is treated as **required**.
 4. Least privilege: per-user rules run without elevation; rules that need write access to
    machine settings are *blocked* with a clear message instead of trying to elevate.
@@ -220,9 +222,11 @@ catalog with sources and the research log of rejected candidates.)
 
 ## How to contribute a rule
 
-1. Find authoritative documentation of the exact setting: an ADMX policy definition
-   (`C:\Windows\PolicyDefinitions`), the Policy CSP reference, Microsoft privacy
-   guidance or Microsoft source code. Forum posts and other scripts are not enough.
+1. Find a source for the exact setting: authoritative documentation (an ADMX policy
+   definition in `C:\Windows\PolicyDefinitions`, the Policy CSP reference, Microsoft privacy
+   guidance or Microsoft source code), or - for per-user Settings toggles only - a recorded
+   observation captured in a disposable VM with `Tools\Capture-WinLeanEvidence.ps1`
+   (see [Docs/Evidence](Docs/Evidence/README.md)). Forum posts and other scripts are not enough.
 2. Write `Rules\<Category>\<category-prefix>.<subject>.<action>.json` with the exact
    registry location, effects, side effects, the Windows default and references.
 3. Declare compatibility conditions for anything feature-dependent (Medium risk).
@@ -234,7 +238,8 @@ catalog with sources and the research log of rejected candidates.)
 ### Rule development checklist
 
 - [ ] The purpose and the Windows feature the setting controls are understood.
-- [ ] The exact key, value name, type and data are taken from documentation, not guessed.
+- [ ] The exact key, value name, type and data come from documentation or a recorded VM
+      observation of the Settings toggle - never guessed.
 - [ ] The Windows default and the matching Settings or Group Policy option are recorded.
 - [ ] Effects and side effects are described honestly (including "managed by your
       organization" banners for policy values).
@@ -279,7 +284,8 @@ Profiles/              Safe, Lean, Minimal, Example.Custom
 Config/                Compatibility.example.json (copy to Compatibility.json), Packages.json
 Schemas/               JSON schemas for rules, profiles and compatibility (editor support)
 Tests/                 Unit, Integration, Destructive, Helpers, Invoke-WinLeanTests.ps1
-Docs/                  Architecture, Rules, Safety, Benchmarking, Compatibility, Testing
+Tools/                 Capture-WinLeanEvidence.ps1 (record what a Settings toggle writes, in a VM)
+Docs/                  Architecture, Rules, Safety, Benchmarking, Compatibility, Testing, Evidence
 Backups/ Reports/ Logs/  runtime output (not tracked by Git)
 ```
 

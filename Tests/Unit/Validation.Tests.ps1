@@ -72,6 +72,41 @@ Describe 'Rule validation' {
     }
 }
 
+Describe 'Evidence standard' {
+    BeforeAll {
+        $script:Observation = @{ method = 'RegistryDiff'; build = 26200; file = 'Docs/Evidence/privacy.test-rule.disable.md'; summary = 'Toggling the setting off wrote Value = 1.' }
+    }
+
+    It 'accepts a per-user preference rule backed only by a recorded observation' {
+        $definition = New-TestRuleDefinition -Extra @{ references = @(); evidence = @($script:Observation) }
+        @(Test-WinLeanRuleDefinition -Definition $definition).Count | Should -Be 0
+    }
+
+    It 'requires at least one reference or observation' {
+        Get-IssueCodes -Definition (New-TestRuleDefinition -Extra @{ references = @() }) | Should -Contain 'References'
+    }
+
+    It 'rejects <Case>' -ForEach @(
+        @{ Case = 'machine-wide values without documentation'; Resources = @(@{ type = 'RegistryValue'; path = 'HKLM:\SOFTWARE\WinLeanTest'; name = 'V'; valueType = 'DWord'; value = 1 }); Windows = @{ minBuild = 22000; maxValidatedBuild = 26200 }; Observation = $null }
+        @{ Case = 'policy values without documentation'; Resources = @(@{ type = 'RegistryValue'; path = 'HKCU:\Software\Policies\WinLeanTest'; name = 'V'; valueType = 'DWord'; value = 1 }); Windows = @{ minBuild = 22000; maxValidatedBuild = 26200 }; Observation = $null }
+        @{ Case = 'a validated build newer than the observation'; Resources = $null; Windows = @{ minBuild = 22000; maxValidatedBuild = 26300 }; Observation = $null }
+        @{ Case = 'an unknown capture method'; Resources = $null; Windows = @{ minBuild = 22000; maxValidatedBuild = 26200 }; Observation = @{ method = 'Guess'; build = 26200; file = 'Docs/Evidence/x.md'; summary = 's' } }
+        @{ Case = 'an evidence file outside Docs/Evidence'; Resources = $null; Windows = @{ minBuild = 22000; maxValidatedBuild = 26200 }; Observation = @{ method = 'RegistryDiff'; build = 26200; file = 'C:\evidence.md'; summary = 's' } }
+        @{ Case = 'a build below Windows 11'; Resources = $null; Windows = @{ minBuild = 22000; maxValidatedBuild = 26200 }; Observation = @{ method = 'RegistryDiff'; build = 19045; file = 'Docs/Evidence/x.md'; summary = 's' } }
+    ) {
+        $observation = if ($Observation) { $Observation } else { $script:Observation }
+        $parameters = @{ Windows = $Windows; Extra = @{ references = @(); evidence = @($observation) } }
+        if ($Resources) { $parameters['Resources'] = $Resources }
+        Get-IssueCodes -Definition (New-TestRuleDefinition @parameters) | Should -Contain 'Evidence'
+    }
+
+    It 'allows documented machine-wide rules to add observations' {
+        $resources = @(@{ type = 'RegistryValue'; path = 'HKLM:\SOFTWARE\WinLeanTest'; name = 'V'; valueType = 'DWord'; value = 1 })
+        $definition = New-TestRuleDefinition -Resources $resources -Extra @{ evidence = @($script:Observation) }
+        @(Test-WinLeanRuleDefinition -Definition $definition).Count | Should -Be 0
+    }
+}
+
 Describe 'Catalog validation' {
     It 'reports duplicate ids, unknown references and contradictions' {
         $rules = @(

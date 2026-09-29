@@ -10,6 +10,10 @@
     "requiresReboot", "takesEffect", "windows", "conditions", "dependencies", "conflicts",
     "effects", "sideEffects", "references", "resources"
   ],
+  "anyOf": [
+    { "properties": { "references": { "minItems": 1 } } },
+    { "required": ["evidence"], "properties": { "evidence": { "minItems": 1 } } }
+  ],
   "properties": {
     "$schema": { "type": "string" },
     "schemaVersion": { "const": 1 },
@@ -88,9 +92,8 @@
     "sideEffects": { "description": "Possible side effects (write 'None known' only after checking).", "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
     "notes": { "description": "Additional reviewer notes, for example the Windows default value.", "type": "array", "items": { "type": "string", "minLength": 1 } },
     "references": {
-      "description": "Sources that document the exact setting (Microsoft documentation, ADMX policy definitions, Microsoft source code).",
+      "description": "Sources that document the exact setting (Microsoft documentation, ADMX policy definitions, Microsoft source code). May be empty only when 'evidence' records an observation.",
       "type": "array",
-      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -98,6 +101,21 @@
         "properties": {
           "title": { "type": "string", "minLength": 1 },
           "url": { "type": "string", "pattern": "^https://" }
+        }
+      }
+    },
+    "evidence": {
+      "description": "Recorded observations of what a Settings toggle writes, captured in a disposable VM (see Docs/Rules.md, evidence standard). Rules without a documentation reference may only change per-user preferences and are validated only up to the newest observed build.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["method", "build", "file", "summary"],
+        "properties": {
+          "method": { "description": "RegistryDiff (Tools/Capture-WinLeanEvidence.ps1) or ProcessMonitor (Sysinternals).", "enum": ["RegistryDiff", "ProcessMonitor"] },
+          "build": { "description": "Windows build the observation was made on.", "type": "integer", "minimum": 22000 },
+          "file": { "description": "The evidence write-up in the repository.", "type": "string", "pattern": "^Docs/Evidence/[A-Za-z0-9][A-Za-z0-9._-]*\\.md$" },
+          "summary": { "description": "What was observed.", "type": "string", "minLength": 1 }
         }
       }
     },

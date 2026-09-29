@@ -22,7 +22,8 @@ gives editors completion and inline errors (add `"$schema": "../../Schemas/rule.
 | `conflicts` | yes | rules that must not be in effect together with this rule |
 | `effects`, `sideEffects` | yes | at least one entry each |
 | `notes` | no | reviewer notes: Windows default, policy definition, caveats |
-| `references` | yes | at least one `https://` source that documents the exact setting |
+| `references` | yes | `https://` sources that document the exact setting (may be `[]` only when `evidence` is present) |
+| `evidence` | no | recorded observations of what a Settings toggle writes (see [Evidence standard](#evidence-standard)) |
 | `resources` | yes | declarative resources (0.1: `RegistryValue`) |
 | `tags` | no | lowercase words |
 
@@ -60,9 +61,49 @@ gives editors completion and inline errors (add `"$schema": "../../Schemas/rule.
 ### Validation issue codes
 
 RuleSchema, UnknownProperty, SchemaVersion, RuleId, RuleIdPrefix, Category, RequiredField,
-Risk, TakesEffect, Windows, Conditions, References, Documentation, Tags, Resources, Reversible,
-Location, RuleParse; catalog: DuplicateRuleId, UnknownDependency, UnknownConflict,
+Risk, TakesEffect, Windows, Conditions, References, Evidence, Documentation, Tags, Resources,
+Reversible, Location, RuleParse; catalog: DuplicateRuleId, UnknownDependency, UnknownConflict,
 ContradictoryReferences, DependencyCycle, UndeclaredConflict (warning).
+
+## Evidence standard
+
+Every rule needs a source for the exact setting it changes. Two kinds of source are
+accepted:
+
+1. **Documentation** (`references`): Microsoft documentation, ADMX/ADML policy definitions
+   (`C:\Windows\PolicyDefinitions`), the Policy CSP reference, or Microsoft source code.
+2. **Recorded observation** (`evidence`): what the Settings app writes when the user flips
+   the corresponding toggle, captured in a disposable VM or Windows Sandbox:
+
+   ```json
+   "evidence": [
+     {
+       "method": "RegistryDiff",
+       "build": 26200,
+       "file": "Docs/Evidence/<rule-id>.md",
+       "summary": "Turning the toggle off wrote X = 0 (DWord); turning it on again wrote X = 1."
+     }
+   ]
+   ```
+
+   A valid observation shows the value(s) the rule writes when the toggle is switched to the
+   rule's state, and the previous value(s) coming back when it is switched back. Methods:
+   `RegistryDiff` (`Tools\Capture-WinLeanEvidence.ps1`, read-only snapshots before and
+   after each change) or `ProcessMonitor` (Sysinternals Process Monitor trace of
+   `SystemSettings.exe`). The write-up in `Docs\Evidence\` records the setting, the Windows
+   build, the procedure, the observed changes and the reviewer's conclusion
+   ([template and procedure](Evidence/README.md)).
+
+Rules whose only source is an observation are held to stricter limits, enforced by
+validation:
+
+- they may only change **per-user preferences** (`HKCU`, outside `\Policies\`) - policy
+  values must be backed by their ADMX definition, and machine-wide values by documentation;
+- `windows.maxValidatedBuild` may not be newer than the newest observed build, so every new
+  Windows build needs a new capture before the rule is validated for it.
+
+Observations never come from the primary workstation, and never from forum posts or other
+scripts.
 
 ## Catalog (milestone 0.1)
 
@@ -90,16 +131,18 @@ explanation texts (ADML) were read for the exact semantics and edition restricti
 
 ## Research log
 
-Candidates that were **not** implemented because their exact semantics are not documented by
-Microsoft (per the rule acceptance criteria), or that are unsuitable:
+Candidates that were **not** implemented yet, because their exact semantics are not documented
+by Microsoft, or that are unsuitable. Per-user Settings toggles can now qualify through a
+recorded observation (see [Evidence standard](#evidence-standard)); they are added once a
+capture in a disposable VM confirms the values.
 
 | Candidate | Status |
 |---|---|
-| `ContentDeliveryManager\SubscribedContent-338393Enabled`, `-353694Enabled`, `-353696Enabled` ("suggested content in Settings") | not in current Microsoft documentation; widely used by third-party scripts - future research |
-| `ContentDeliveryManager\SubscribedContent-338389Enabled` (tips) | undocumented - future research; the documented equivalent (DisableSoftLanding) is edition-limited |
-| `Explorer\Advanced\Start_IrisRecommendations` (Start recommendations) | undocumented - future research |
+| `ContentDeliveryManager\SubscribedContent-338393Enabled`, `-353694Enabled`, `-353696Enabled` ("Show me suggested content in the Settings app") | eligible under the evidence standard (per-user toggle); awaiting a VM capture |
+| `ContentDeliveryManager\SubscribedContent-338389Enabled` ("Get tips and suggestions when using Windows") | eligible under the evidence standard; awaiting a VM capture (the documented policy DisableSoftLanding is edition-limited) |
+| `Explorer\Advanced\Start_IrisRecommendations` ("Show recommendations for tips, shortcuts, new apps, and more" in Start) | eligible under the evidence standard; awaiting a VM capture |
 | `Explorer\Advanced\TaskbarDa` (widgets button) | protected by the User Choice Protection Driver on current builds; also a preference rather than an optimization |
-| `HKCU\...\AdvertisingInfo\Enabled` (per-user advertising ID toggle) | not documented; the documented policy is used instead |
+| `HKCU\...\AdvertisingInfo\Enabled` (per-user advertising ID toggle) | eligible under the evidence standard as a non-policy alternative for standard users; the documented policy is used today |
 | `HKLM\...\CurrentVersion\AdvertisingInfo\Enabled` | mentioned in the privacy guidance without semantics; not needed with the policy |
 | `...\Privacy\TailoredExperiencesWithDiagnosticDataEnabled` (per-user toggle) | not documented; the documented user policy is used instead |
 | Service start types, scheduled tasks, AppX removal, optional features | planned for later milestones with dedicated providers; not raw registry edits |

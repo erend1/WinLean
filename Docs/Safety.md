@@ -11,8 +11,10 @@ substitute for package management, or apply undocumented tweaks.
 
 Enforcement:
 
-- **Documented settings only.** Every rule needs references; the research log in
-  [Rules.md](Rules.md) records what was rejected and why.
+- **Sourced settings only.** Every rule needs a documentation reference, or - for per-user
+  Settings toggles only - a recorded observation from a disposable VM (evidence standard,
+  enforced by validation). The research log in [Rules.md](Rules.md) records what was
+  rejected or is still waiting for evidence.
 - **Protected locations.** The registry provider refuses to write to these areas, both when
   a rule is validated and again inside the write functions (defense in depth):
   Defender and Windows Security (including policies and Defender for Endpoint), Windows
