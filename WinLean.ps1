@@ -86,8 +86,9 @@
     .\WinLean.ps1 -Benchmark; .\WinLean.ps1 -Report
 
 .NOTES
-    Exit codes: 0 success, 1 completed with failures, 2 invalid input or configuration,
-    3 cancelled or precondition not met.
+    Exit codes: 0 success (including "nothing to do"), 1 completed with failures or an
+    unexpected error, 2 invalid input or configuration (unknown profile, invalid rule, no
+    backup to restore), 3 cancelled at the confirmation prompt.
 #>
 [CmdletBinding(DefaultParameterSetName = 'Help', SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(

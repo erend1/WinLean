@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "status": "reserved",
+  "description": "Reserved for a later milestone: baseline applications to install through WinGet as part of a profile. WinLean 0.1 does not read this file.",
+  "packages": []
+}
