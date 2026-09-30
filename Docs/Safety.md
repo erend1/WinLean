@@ -27,7 +27,15 @@ Enforcement:
   the SmartScreen values and Task Manager's undocumented startup state (`StartupApproved`).
 - **Declarative rules.** Rules cannot contain code. The only code that changes Windows is
   the reviewed providers in `src\Providers\`: `RegistryValue` and `StartupEntry` (both
-  through the registry provider's protected write functions).
+  through the registry provider's protected write functions) and `WindowsOptionalFeature`
+  (through the DISM PowerShell module, never through servicing registry keys).
+- **Optional features.** Defender, virtualization-based security, device lockdown and Sysmon
+  features are never changed; SMB 1.0, Windows PowerShell 2.0 and Simple TCP/IP services are
+  never enabled by a rule. Feature rules need risk Medium or higher, a restart declaration,
+  and - for Hyper-V, WSL, Virtual Machine Platform, Windows Sandbox and other features that
+  compatibility requirements depend on - an explicit "not needed" decision by the user. A
+  change that makes DISM change other features too is reverted and fails
+  (`CollateralChange`). WinLean never downloads feature payloads.
 - **Startup entries.** Only the Run keys are managed (not RunOnce, not the Startup folders,
   never `StartupApproved`). Adding an entry (`ensure: Present`) makes Windows run a
   program at every sign-in; its command is declared in the reviewed rule, shown in the plan,

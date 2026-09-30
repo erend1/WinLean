@@ -43,6 +43,7 @@ $script:FailureClasses = @(
     'StateUnavailable'
     'BackupFailed'
     'ProtectedResource'
+    'CollateralChange'
     'UnexpectedError'
 )
 

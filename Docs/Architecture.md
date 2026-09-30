@@ -41,7 +41,7 @@ WinLean.ps1  ->  WinLean.Core (engine facade; also the root module of src\WinLea
                    +-- WinLean.Logging
 WinLean.Rules      -> Providers\WinLean.Providers (dispatcher), WinLean.Validation
 WinLean.Validation -> Providers\WinLean.Providers
-Providers\WinLean.Providers -> Providers\WinLean.Provider.Registry, Providers\WinLean.Provider.Startup
+Providers\WinLean.Providers -> Providers\WinLean.Provider.Registry, .Provider.Startup, .Provider.OptionalFeature
 Providers\WinLean.Provider.Startup -> Providers\WinLean.Provider.Registry
 everything         -> WinLean.Common (JSON, paths, culture-safe helpers, platform facts, failures)
 ```
@@ -53,6 +53,7 @@ everything         -> WinLean.Common (JSON, paths, culture-safe helpers, platfor
 | WinLean.Validation | authoritative validation of rules, catalog, profiles and compatibility files |
 | Providers\WinLean.Provider.Registry | the `RegistryValue` resource type; exact registry capture, protected-location checks and the only registry-writing functions |
 | Providers\WinLean.Provider.Startup | the `StartupEntry` resource type (Run keys), built on the registry provider |
+| Providers\WinLean.Provider.OptionalFeature | the `WindowsOptionalFeature` resource type (DISM), with collateral-change protection |
 | Providers\WinLean.Providers | provider registry and uniform dispatcher |
 | WinLean.Rules | rule catalog, conditions, the rule interface |
 | WinLean.Inventory | read-only inventory with per-section fault isolation |
@@ -158,7 +159,8 @@ restart pending is reported as well. Change records store the rule's declaration
 restore can report restarts in the same way.
 
 Failure classes: PermissionDenied, Unsupported, CommandFailed, VerificationFailed,
-DependencyFailure, StateUnavailable, BackupFailed, ProtectedResource, UnexpectedError.
+DependencyFailure, StateUnavailable, BackupFailed, ProtectedResource, CollateralChange (a
+change altered resources that the rule does not declare; reverted), UnexpectedError.
 Classification uses exception types and HRESULTs, never (localized) message text.
 
 ## Restore algorithm

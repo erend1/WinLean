@@ -26,7 +26,7 @@ gives editors completion and inline errors (add `"$schema": "../../Schemas/rule.
 | `references` | yes | `https://` sources that document the exact setting (may be `[]` only when `evidence` is present) |
 | `evidence` | no | recorded observations of what a Settings toggle writes (see [Evidence standard](#evidence-standard)) |
 | `validation` | yes | how, on which build and when the rule was validated (see [Validation records](#validation-records)) |
-| `resources` | yes | declarative resources: `RegistryValue`, `StartupEntry` |
+| `resources` | yes | declarative resources: `RegistryValue`, `StartupEntry`, `WindowsOptionalFeature` |
 | `tags` | no | lowercase words |
 
 ### Benefit
@@ -145,6 +145,61 @@ answer how the rule was validated, on which Windows build and when:
 - No shipped rule uses `StartupEntry` yet: removing a vendor's startup program is a
   compatibility decision that needs a requirement condition, and every such rule must be
   validated in a VM first.
+
+### WindowsOptionalFeature resources
+
+```json
+{ "type": "WindowsOptionalFeature", "name": "TelnetClient", "state": "Disabled" }
+```
+
+- `name` is the exact feature name shown by `Get-WindowsOptionalFeature -Online`; `state` is
+  `Enabled` or `Disabled`. Removing feature payloads (`-Remove`) is not supported by rules.
+- Changes go through the DISM PowerShell module only (`Enable-/Disable-WindowsOptionalFeature
+  -Online -NoRestart`), never through servicing registry keys. Enabling uses `-LimitAccess`,
+  so WinLean never downloads a payload from Windows Update; `-All` is never used, so parent
+  features must be listed explicitly (before their children when enabling, after them when
+  disabling).
+- State is read with DISM in elevated sessions and with `Win32_OptionalFeature` otherwise
+  (standard users can plan; applying needs Administrator rights, and the executor re-reads
+  the state with DISM first).
+- A feature that is not part of the Windows image is "Disabled" (nothing to do) and makes a
+  rule that needs it enabled **Unsupported**. A pending change (`EnablePending`,
+  `DisablePending`) counts as done after WinLean's change, but a feature that is already
+  waiting for a restart is **Blocked** until Windows has been restarted.
+- **Collateral changes.** WinLean reads every feature before and after each change. If DISM
+  changed anything besides the target (for example the children of a disabled parent),
+  WinLean reverts the target and every collateral change and fails the rule with
+  `CollateralChange`: the backup records only the declared features, so it could not restore
+  the others.
+- **Restart.** DISM's `RestartNeeded` (or a pending state) is reported in the rule result and
+  in restore results. Rules must declare `takesEffect: Reboot`, so the plan announces a
+  possible restart.
+- **Rule constraints.** Risk `Medium` or `High`. Disabling a feature that a compatibility
+  requirement depends on needs the matching condition `requirement.<key> Equals false`, so a
+  feature is never removed merely because it exists:
+
+  | Feature | Required conditions (all `false`) |
+  |---|---|
+  | `Microsoft-Hyper-V*` | `hyperV` |
+  | `HypervisorPlatform` | `virtualization` |
+  | `VirtualMachinePlatform`, `Microsoft-Windows-Subsystem-Linux` | `wsl2`, `docker` |
+  | `Containers-DisposableClientVM` (Windows Sandbox) | `windowsSandbox` |
+  | `Containers` | `docker` |
+  | `Printing-*` | `printer` |
+  | `SMB1Protocol*`, `SmbDirect` | `smb` |
+  | `SearchEngine-Client-Package` | `windowsSearch` |
+  | `Microsoft-RemoteDesktopConnection` | `remoteDesktop` |
+  | `DirectPlay`, `LegacyComponents` | `gamingMachine` |
+
+- **Protected features**, refused by validation and again at write time: never changed -
+  `Windows-Defender-*`, `Containers-Server-For-Application-Guard`, `IsolatedUserMode`,
+  `HostGuardian`, `Sysmon*`, device lockdown (`Client-DeviceLockdown`, `Client-Embedded*`,
+  `Client-KeyboardFilter`, `Client-UnifiedWriteFilter`); never enabled by a rule -
+  `SMB1Protocol`, `SMB1Protocol-Client`, `SMB1Protocol-Server`,
+  `MicrosoftWindowsPowerShellV2*`, `SimpleTCP`. Restoring a recorded previous state of the
+  latter group is allowed, because it undoes WinLean's own change.
+- No shipped rule changes an optional feature. Hyper-V, WSL, Virtual Machine Platform and
+  Windows Sandbox are never disabled automatically.
 
 ### Validation issue codes
 

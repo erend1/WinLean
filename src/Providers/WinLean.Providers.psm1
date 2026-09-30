@@ -46,6 +46,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module -Name ([System.IO.Path]::GetFullPath((Join-Path -Path $PSScriptRoot -ChildPath '..\WinLean.Common.psm1')))
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'WinLean.Provider.Registry.psm1')
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'WinLean.Provider.Startup.psm1')
+Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'WinLean.Provider.OptionalFeature.psm1')
 
 # RuleConstraints (optional): checks that need the whole rule definition, for example a
 # minimum risk level for resources of this type.
@@ -76,6 +77,20 @@ $script:Providers = @{
         Set             = 'Set-WinLeanStartupResource'
         Restore         = 'Restore-WinLeanStartupResource'
         FormatState     = 'Format-WinLeanStartupState'
+    }
+    WindowsOptionalFeature = @{
+        Validate        = 'Test-WinLeanOptionalFeatureResourceDefinition'
+        RuleConstraints = 'Test-WinLeanOptionalFeatureRuleConstraints'
+        Normalize       = 'ConvertTo-WinLeanOptionalFeatureResource'
+        Describe        = 'Get-WinLeanOptionalFeatureResourceInfo'
+        GetState        = 'Get-WinLeanOptionalFeatureResourceState'
+        GetDesired      = 'Get-WinLeanOptionalFeatureDesiredState'
+        Equal           = 'Test-WinLeanOptionalFeatureStateEqual'
+        Restorable      = 'Test-WinLeanOptionalFeatureStateRestorable'
+        TestAccess      = 'Test-WinLeanOptionalFeatureResourceAccess'
+        Set             = 'Set-WinLeanOptionalFeatureResource'
+        Restore         = 'Restore-WinLeanOptionalFeatureResource'
+        FormatState     = 'Format-WinLeanOptionalFeatureState'
     }
 }
 

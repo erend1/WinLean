@@ -446,6 +446,101 @@ function Register-FakeRegistryMocks {
     Mock -ModuleName $moduleName -CommandName Test-WinLeanRegistryWriteAccess -MockWith { -not (Test-FakeDenied -Registry $script:FakeRegistry -Path $Path) }
 }
 
+# ---------------------------------------------------------------------------
+# Fake optional features (servicing)
+# ---------------------------------------------------------------------------
+
+function New-FakeFeatureStore {
+    <#
+    .SYNOPSIS
+        Creates an in-memory set of optional features for the WindowsOptionalFeature provider.
+    .NOTES
+        Features        name -> state
+        IsAdministrator whether the fake process may change features
+        PendingChanges  when $true, changes end in EnablePending/DisablePending
+        RestartNeeded   what DISM reports after a change
+        Cascade         parent -> child names disabled together with the parent (collateral)
+        FailingNames    features whose changes throw
+        Operations      log of 'Operation:Name'
+    #>
+    param([hashtable] $Features = @{})
+
+    $comparer = [System.StringComparer]::OrdinalIgnoreCase
+    $store = [pscustomobject]@{
+        Features        = New-Object -TypeName 'System.Collections.Generic.Dictionary[string,string]' -ArgumentList $comparer
+        IsAdministrator = $true
+        PendingChanges  = $false
+        RestartNeeded   = $false
+        Cascade         = New-Object -TypeName 'System.Collections.Generic.Dictionary[string,string[]]' -ArgumentList $comparer
+        FailingNames    = New-Object -TypeName System.Collections.Generic.List[string]
+        Operations      = New-Object -TypeName System.Collections.Generic.List[string]
+    }
+    foreach ($name in $Features.Keys) {
+        $store.Features[$name] = [string]$Features[$name]
+    }
+    return $store
+}
+
+function Invoke-FakeFeatureChange {
+    param($Store, [string] $Name, [string] $Operation)
+
+    if (Test-FakeListMatch -List $Store.FailingNames -Value $Name) {
+        throw (New-Object -TypeName System.Runtime.InteropServices.COMException -ArgumentList "The operation failed (fake servicing).", -2146498529)
+    }
+    if (-not $Store.Features.ContainsKey($Name)) {
+        throw (New-Object -TypeName System.Runtime.InteropServices.COMException -ArgumentList "Unknown feature (fake servicing).", -2146498548)
+    }
+    $Store.Operations.Add("$($Operation):$Name")
+    switch ($Operation) {
+        'Enable' {
+            if ($Store.Features[$Name] -eq 'DisabledWithPayloadRemoved') {
+                throw (New-Object -TypeName System.Runtime.InteropServices.COMException -ArgumentList "The source files could not be found (fake servicing).", -2146498529)
+            }
+            $Store.Features[$Name] = if ($Store.PendingChanges) { 'EnablePending' } else { 'Enabled' }
+        }
+        'Disable' {
+            $Store.Features[$Name] = if ($Store.PendingChanges) { 'DisablePending' } else { 'Disabled' }
+            if ($Store.Cascade.ContainsKey($Name)) {
+                foreach ($child in $Store.Cascade[$Name]) { $Store.Features[$child] = $Store.Features[$Name] }
+            }
+        }
+        'DisableRemovePayload' { $Store.Features[$Name] = 'DisabledWithPayloadRemoved' }
+    }
+    return [pscustomobject]@{ restartNeeded = [bool]$Store.RestartNeeded }
+}
+
+function Get-FakeFeatureSnapshot {
+    param($Store)
+
+    $copy = New-Object -TypeName 'System.Collections.Generic.Dictionary[string,string]' -ArgumentList ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($name in @($Store.Features.Keys)) { $copy[$name] = $Store.Features[$name] }
+    return , $copy
+}
+
+function Register-FakeFeatureMocks {
+    <#
+    .SYNOPSIS
+        Routes the low-level functions of WinLean.Provider.OptionalFeature to
+        $script:FakeFeatures. Call from BeforeEach (after creating $script:FakeFeatures).
+    #>
+    $moduleName = 'WinLean.Provider.OptionalFeature'
+    Mock -ModuleName $moduleName -CommandName Test-WinLeanOptionalFeatureServicingAccess -MockWith { [bool]$script:FakeFeatures.IsAdministrator }
+    Mock -ModuleName $moduleName -CommandName Get-WinLeanOptionalFeatureRecord -MockWith {
+        $state = if ($script:FakeFeatures.Features.ContainsKey($Name)) { $script:FakeFeatures.Features[$Name] } else { 'NotPresent' }
+        [pscustomobject]@{ name = $Name; state = $state; source = 'Fake' }
+    }
+    Mock -ModuleName $moduleName -CommandName Get-WinLeanOptionalFeatureSnapshot -MockWith { , (Get-FakeFeatureSnapshot -Store $script:FakeFeatures) }
+    Mock -ModuleName $moduleName -CommandName Invoke-WinLeanOptionalFeatureChange -MockWith { Invoke-FakeFeatureChange -Store $script:FakeFeatures -Name $Name -Operation $Operation }
+}
+
+function Get-FakeFeatureSnapshotText {
+    param($Store)
+
+    $names = [string[]]@($Store.Features.Keys)
+    [System.Array]::Sort($names, [System.StringComparer]::OrdinalIgnoreCase)
+    return (@($names | ForEach-Object { "$_=$($Store.Features[$_])" }) -join "`n")
+}
+
 function New-TestLogger {
     <#
     .SYNOPSIS

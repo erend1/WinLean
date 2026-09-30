@@ -175,7 +175,8 @@
       "items": {
         "oneOf": [
           { "$ref": "#/definitions/registryValue" },
-          { "$ref": "#/definitions/startupEntry" }
+          { "$ref": "#/definitions/startupEntry" },
+          { "$ref": "#/definitions/windowsOptionalFeature" }
         ]
       }
     },
@@ -217,6 +218,17 @@
       "if": { "properties": { "ensure": { "const": "Absent" } }, "required": ["ensure"] },
       "then": { "not": { "anyOf": [{ "required": ["command"] }, { "required": ["valueType"] }] } },
       "else": { "required": ["command"] }
+    },
+    "windowsOptionalFeature": {
+      "description": "A Windows optional feature, changed through DISM (never through servicing registry keys). Rules need risk Medium or higher and takesEffect Reboot; disabling a feature that a compatibility requirement depends on needs the matching 'requirement.<key> Equals false' condition.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "name", "state"],
+      "properties": {
+        "type": { "const": "WindowsOptionalFeature" },
+        "name": { "description": "Exact feature name as shown by Get-WindowsOptionalFeature, for example 'TelnetClient'.", "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+        "state": { "description": "Enabled or Disabled. Removing feature payloads is not supported.", "enum": ["Enabled", "Disabled"] }
+      }
     }
   }
 }
