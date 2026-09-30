@@ -466,8 +466,14 @@ function Test-WinLeanRuleDefinition {
     else {
         $index = 0
         foreach ($resource in $resources) {
-            foreach ($message in @(Test-WinLeanResourceDefinition -Definition $resource)) {
+            $messages = @(Test-WinLeanResourceDefinition -Definition $resource)
+            foreach ($message in $messages) {
                 & $addError 'Resources' "resources[$index]: $message"
+            }
+            if ($messages.Count -eq 0) {
+                foreach ($message in @(Test-WinLeanResourceRuleConstraints -Definition $resource -Rule $Definition)) {
+                    & $addError 'Resources' "resources[$index]: $message"
+                }
             }
             $index++
         }
@@ -481,6 +487,11 @@ function Test-WinLeanRuleDefinition {
         # only up to the newest build on which the behaviour was observed.
         if ($referenceCount -eq 0 -and $evidenceCount -gt 0) {
             foreach ($resource in $resources) {
+                $resourceType = [string](Get-WinLeanProperty -InputObject $resource -Name 'type' -Default '')
+                if ($resourceType -cne 'RegistryValue') {
+                    & $addError 'Evidence' "Rules without a documentation reference may only change per-user registry preferences; '$resourceType' resources need a documented source."
+                    continue
+                }
                 $path = [string](Get-WinLeanProperty -InputObject $resource -Name 'path' -Default '')
                 if (-not $path.StartsWith('HKCU:\', [System.StringComparison]::OrdinalIgnoreCase) -or
                     (Test-WinLeanTextContains -Text ($path + '\') -Value '\Policies\')) {

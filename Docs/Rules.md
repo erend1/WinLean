@@ -26,7 +26,7 @@ gives editors completion and inline errors (add `"$schema": "../../Schemas/rule.
 | `references` | yes | `https://` sources that document the exact setting (may be `[]` only when `evidence` is present) |
 | `evidence` | no | recorded observations of what a Settings toggle writes (see [Evidence standard](#evidence-standard)) |
 | `validation` | yes | how, on which build and when the rule was validated (see [Validation records](#validation-records)) |
-| `resources` | yes | declarative resources: `RegistryValue` |
+| `resources` | yes | declarative resources: `RegistryValue`, `StartupEntry` |
 | `tags` | no | lowercase words |
 
 ### Benefit
@@ -108,6 +108,43 @@ answer how the rule was validated, on which Windows build and when:
   and again at write time. See [Safety.md](Safety.md).
 - Two rules that set the same value differently must declare the conflict; otherwise
   validation warns and the plan blocks both.
+- The Run and RunOnce keys cannot be targeted by `RegistryValue` resources: startup
+  entries use `StartupEntry`, and RunOnce entries are not managed at all.
+
+### StartupEntry resources
+
+```json
+{ "type": "StartupEntry", "location": "CurrentUserRun", "name": "Example", "ensure": "Absent" }
+{ "type": "StartupEntry", "location": "MachineRun", "name": "Example", "ensure": "Present",
+  "command": "\"C:\\Program Files\\Example\\example.exe\" /background", "valueType": "String" }
+```
+
+| Location | Registry key | Scope |
+|---|---|---|
+| `CurrentUserRun` | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | CurrentUser |
+| `MachineRun` | `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` | Machine (Administrator) |
+| `MachineRun32` | `HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run` | Machine (Administrator; 32-bit programs) |
+
+- A startup entry is one registry value. The provider reuses the registry provider for
+  capture, writes and restore, so the backup keeps the exact command (unexpanded
+  `%variables%`) and value kind, and the identity equals the `RegistryValue` identity of
+  the same value (conflicts across the two types are detected).
+- `ensure: Absent` removes the entry; `ensure: Present` adds or replaces it with `command`
+  (`valueType` `String`, the default, or `ExpandString`). Adding an entry makes Windows run
+  a program at every sign-in, so such rules need risk Medium or higher.
+- Task Manager's enabled/disabled choice (`Explorer\StartupApproved`) is undocumented binary
+  data. WinLean never modifies it (it is a protected registry location); because it stays
+  untouched, restoring a removed entry also brings back its previous Task Manager state.
+  The inventory reads it heuristically, for information only.
+- Not supported: `RunOnce` keys (Windows deletes a RunOnce entry when it runs it; such
+  entries represent pending one-time work, often an installer finishing) and the Startup
+  folders (removing a shortcut needs a lossless file backup - content, attributes and
+  security descriptor - planned for a later milestone).
+- Protected entries: `SecurityHealth` and `WindowsDefender` in `MachineRun` (Windows
+  Security).
+- No shipped rule uses `StartupEntry` yet: removing a vendor's startup program is a
+  compatibility decision that needs a requirement condition, and every such rule must be
+  validated in a VM first.
 
 ### Validation issue codes
 

@@ -23,10 +23,15 @@ Enforcement:
   (`HKLM\SYSTEM\*ControlSet*\Services`), Device Guard / VBS, LSA, Secure Boot, code
   integrity, Session Manager (kernel, memory management, mitigations), SCHANNEL, Image File
   Execution Options, Winlogon, UAC policy, certificate stores and cryptography, WinTrust,
-  software restriction policies, BitLocker policy, attachment (Mark-of-the-Web) policies
-  and the SmartScreen values.
-- **Declarative rules.** Rules cannot contain commands. The only code that changes Windows is
-  the reviewed provider (`src\Providers\WinLean.Provider.Registry.psm1` in 0.1).
+  software restriction policies, BitLocker policy, attachment (Mark-of-the-Web) policies,
+  the SmartScreen values and Task Manager's undocumented startup state (`StartupApproved`).
+- **Declarative rules.** Rules cannot contain code. The only code that changes Windows is
+  the reviewed providers in `src\Providers\`: `RegistryValue` and `StartupEntry` (both
+  through the registry provider's protected write functions).
+- **Startup entries.** Only the Run keys are managed (not RunOnce, not the Startup folders,
+  never `StartupApproved`). Adding an entry (`ensure: Present`) makes Windows run a
+  program at every sign-in; its command is declared in the reviewed rule, shown in the plan,
+  and such rules need risk Medium or higher. The Windows Security entries are protected.
 - **Known ids only.** Profiles can only reference rules in the catalog; an unknown id stops
   the run.
 

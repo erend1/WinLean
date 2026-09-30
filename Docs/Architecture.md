@@ -41,7 +41,8 @@ WinLean.ps1  ->  WinLean.Core (engine facade; also the root module of src\WinLea
                    +-- WinLean.Logging
 WinLean.Rules      -> Providers\WinLean.Providers (dispatcher), WinLean.Validation
 WinLean.Validation -> Providers\WinLean.Providers
-Providers\WinLean.Providers -> Providers\WinLean.Provider.Registry
+Providers\WinLean.Providers -> Providers\WinLean.Provider.Registry, Providers\WinLean.Provider.Startup
+Providers\WinLean.Provider.Startup -> Providers\WinLean.Provider.Registry
 everything         -> WinLean.Common (JSON, paths, culture-safe helpers, platform facts, failures)
 ```
 
@@ -50,7 +51,8 @@ everything         -> WinLean.Common (JSON, paths, culture-safe helpers, platfor
 | WinLean.Common | JSON with atomic writes, culture-invariant helpers, timestamps, identity/privilege/platform facts, failure classification |
 | WinLean.Logging | one logger object, three sinks (console, `.log`, `.jsonl`) |
 | WinLean.Validation | authoritative validation of rules, catalog, profiles and compatibility files |
-| Providers\WinLean.Provider.Registry | the `RegistryValue` resource type; the only code in 0.1 that writes Windows configuration |
+| Providers\WinLean.Provider.Registry | the `RegistryValue` resource type; exact registry capture, protected-location checks and the only registry-writing functions |
+| Providers\WinLean.Provider.Startup | the `StartupEntry` resource type (Run keys), built on the registry provider |
 | Providers\WinLean.Providers | provider registry and uniform dispatcher |
 | WinLean.Rules | rule catalog, conditions, the rule interface |
 | WinLean.Inventory | read-only inventory with per-section fault isolation |

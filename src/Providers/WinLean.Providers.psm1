@@ -21,6 +21,8 @@
 
     Optional parts of the contract:
 
+      * RuleConstraints (definition, rule) -> problem descriptions for constraints that
+        involve the whole rule, for example a minimum risk for resources of this type.
       * A captured state may contain 'available' = $false when the resource does not
         exist on this system (for example an optional feature that is not part of the
         Windows image). The policy engine reports such rules as Unsupported unless the
@@ -43,7 +45,10 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module -Name ([System.IO.Path]::GetFullPath((Join-Path -Path $PSScriptRoot -ChildPath '..\WinLean.Common.psm1')))
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'WinLean.Provider.Registry.psm1')
+Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'WinLean.Provider.Startup.psm1')
 
+# RuleConstraints (optional): checks that need the whole rule definition, for example a
+# minimum risk level for resources of this type.
 $script:Providers = @{
     RegistryValue = @{
         Validate    = 'Test-WinLeanRegistryResourceDefinition'
@@ -57,6 +62,20 @@ $script:Providers = @{
         Set         = 'Set-WinLeanRegistryResource'
         Restore     = 'Restore-WinLeanRegistryResource'
         FormatState = 'Format-WinLeanRegistryState'
+    }
+    StartupEntry  = @{
+        Validate        = 'Test-WinLeanStartupResourceDefinition'
+        RuleConstraints = 'Test-WinLeanStartupRuleConstraints'
+        Normalize       = 'ConvertTo-WinLeanStartupResource'
+        Describe        = 'Get-WinLeanStartupResourceInfo'
+        GetState        = 'Get-WinLeanStartupResourceState'
+        GetDesired      = 'Get-WinLeanStartupDesiredState'
+        Equal           = 'Test-WinLeanStartupStateEqual'
+        Restorable      = 'Test-WinLeanStartupStateRestorable'
+        TestAccess      = 'Test-WinLeanStartupResourceAccess'
+        Set             = 'Set-WinLeanStartupResource'
+        Restore         = 'Restore-WinLeanStartupResource'
+        FormatState     = 'Format-WinLeanStartupState'
     }
 }
 
@@ -111,6 +130,27 @@ function Test-WinLeanResourceDefinition {
         return
     }
     & (Get-WinLeanProviderCommand -Type $type -Operation 'Validate') -Definition $Definition
+}
+
+function Test-WinLeanResourceRuleConstraints {
+    <#
+    .SYNOPSIS
+        Checks provider-specific constraints that involve the whole rule (for example a
+        minimum risk). Call only for resource definitions that passed validation.
+    .OUTPUTS
+        Problem descriptions (strings).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] $Definition,
+        [Parameter(Mandatory)] $Rule
+    )
+
+    $command = Get-WinLeanProviderCommand -Type ([string]$Definition.type) -Operation 'RuleConstraints'
+    if ($command) {
+        & $command -Definition $Definition -Rule $Rule
+    }
 }
 
 function ConvertTo-WinLeanResource {
@@ -295,6 +335,7 @@ function Format-WinLeanResourceState {
 Export-ModuleMember -Function @(
     'Get-WinLeanResourceTypes'
     'Test-WinLeanResourceDefinition'
+    'Test-WinLeanResourceRuleConstraints'
     'ConvertTo-WinLeanResource'
     'Get-WinLeanResourceInfo'
     'Get-WinLeanResourceState'

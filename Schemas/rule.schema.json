@@ -172,7 +172,12 @@
       "description": "The declarative resources the rule manages. Apply, verify and undo are implemented by the resource provider.",
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/definitions/registryValue" }
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/registryValue" },
+          { "$ref": "#/definitions/startupEntry" }
+        ]
+      }
     },
     "tags": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" } }
   },
@@ -192,6 +197,26 @@
       "if": { "properties": { "ensure": { "const": "Absent" } }, "required": ["ensure"] },
       "then": { "not": { "anyOf": [{ "required": ["valueType"] }, { "required": ["value"] }] } },
       "else": { "required": ["valueType", "value"] }
+    },
+    "startupEntry": {
+      "description": "A program started at sign-in through a Run registry key. RunOnce keys and Startup folders are not supported; Task Manager's StartupApproved data is never modified.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "location", "name", "ensure"],
+      "properties": {
+        "type": { "const": "StartupEntry" },
+        "location": {
+          "description": "CurrentUserRun (HKCU\\...\\Run), MachineRun (HKLM\\...\\Run) or MachineRun32 (HKLM\\SOFTWARE\\WOW6432Node\\...\\Run).",
+          "enum": ["CurrentUserRun", "MachineRun", "MachineRun32"]
+        },
+        "name": { "description": "Name of the Run value.", "type": "string", "minLength": 1, "pattern": "\\S" },
+        "ensure": { "description": "Absent removes the entry; Present adds or replaces it (needs risk Medium or higher).", "enum": ["Present", "Absent"] },
+        "command": { "description": "The command line (Present only).", "type": "string", "minLength": 1 },
+        "valueType": { "description": "Registry kind of the command (Present only; default String).", "enum": ["String", "ExpandString"] }
+      },
+      "if": { "properties": { "ensure": { "const": "Absent" } }, "required": ["ensure"] },
+      "then": { "not": { "anyOf": [{ "required": ["command"] }, { "required": ["valueType"] }] } },
+      "else": { "required": ["command"] }
     }
   }
 }

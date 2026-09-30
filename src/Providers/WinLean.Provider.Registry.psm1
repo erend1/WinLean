@@ -92,6 +92,19 @@ $script:ProtectedLocations = @(
     @{ Key = 'HKLM\SOFTWARE\POLICIES\MICROSOFT\WINDOWS\SYSTEM'; Name = 'ENABLESMARTSCREEN'; Reason = 'SmartScreen policy' }
     @{ Key = 'HKLM\SOFTWARE\MICROSOFT\WINDOWS\CURRENTVERSION\EXPLORER'; Name = 'SMARTSCREENENABLED'; Reason = 'SmartScreen' }
     @{ Key = 'HKCU\SOFTWARE\MICROSOFT\WINDOWS\CURRENTVERSION\APPHOST'; Name = 'ENABLEWEBCONTENTEVALUATION'; Reason = 'SmartScreen for apps' }
+    @{ Key = 'HKCU\SOFTWARE\MICROSOFT\WINDOWS\CURRENTVERSION\EXPLORER\STARTUPAPPROVED'; Reason = 'Task Manager startup state (undocumented binary data)' }
+    @{ Key = 'HKLM\SOFTWARE\MICROSOFT\WINDOWS\CURRENTVERSION\EXPLORER\STARTUPAPPROVED'; Reason = 'Task Manager startup state (undocumented binary data)' }
+)
+
+# Keys that RegistryValue resources must not target because another resource type manages
+# them (or because WinLean deliberately does not manage them). Checked during validation.
+$script:DedicatedLocations = @(
+    @{ Key = 'HKCU\SOFTWARE\MICROSOFT\WINDOWS\CURRENTVERSION\RUN'; Message = "startup entries are managed with the 'StartupEntry' resource type" }
+    @{ Key = 'HKLM\SOFTWARE\MICROSOFT\WINDOWS\CURRENTVERSION\RUN'; Message = "startup entries are managed with the 'StartupEntry' resource type" }
+    @{ Key = 'HKLM\SOFTWARE\WOW6432NODE\MICROSOFT\WINDOWS\CURRENTVERSION\RUN'; Message = "startup entries are managed with the 'StartupEntry' resource type" }
+    @{ Key = 'HKCU\SOFTWARE\MICROSOFT\WINDOWS\CURRENTVERSION\RUNONCE'; Message = 'RunOnce entries describe pending one-time work and are not managed by WinLean' }
+    @{ Key = 'HKLM\SOFTWARE\MICROSOFT\WINDOWS\CURRENTVERSION\RUNONCE'; Message = 'RunOnce entries describe pending one-time work and are not managed by WinLean' }
+    @{ Key = 'HKLM\SOFTWARE\WOW6432NODE\MICROSOFT\WINDOWS\CURRENTVERSION\RUNONCE'; Message = 'RunOnce entries describe pending one-time work and are not managed by WinLean' }
 )
 
 # ---------------------------------------------------------------------------
@@ -156,6 +169,27 @@ function Get-WinLeanRegistryProtectedReason {
         }
         if ($key -ceq $protectedKey -or $key.StartsWith($protectedKey + '\', [System.StringComparison]::Ordinal)) {
             return [string]$entry.Reason
+        }
+    }
+    return $null
+}
+
+function Get-WinLeanRegistryDedicatedReason {
+    <#
+    .SYNOPSIS
+        Returns why a RegistryValue resource must not target a key (another resource type
+        manages it), or $null.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $location = ConvertFrom-WinLeanRegistryPath -Path $Path
+    $key = ($location.hive + '\' + $location.subKey).ToUpperInvariant()
+    foreach ($entry in $script:DedicatedLocations) {
+        $dedicatedKey = [string]$entry.Key
+        if ($key -ceq $dedicatedKey -or $key.StartsWith($dedicatedKey + '\', [System.StringComparison]::Ordinal)) {
+            return [string]$entry.Message
         }
     }
     return $null
@@ -873,6 +907,12 @@ function Test-WinLeanRegistryResourceDefinition {
             "targets a protected registry location ($reason)"
         }
     }
+    if ($null -ne $location) {
+        $dedicated = Get-WinLeanRegistryDedicatedReason -Path $location.path
+        if ($dedicated) {
+            "must not target '$($location.path)': $dedicated"
+        }
+    }
 }
 
 function ConvertTo-WinLeanRegistryResource {
@@ -1122,6 +1162,7 @@ function Format-WinLeanRegistryState {
 Export-ModuleMember -Function @(
     'ConvertFrom-WinLeanRegistryPath'
     'Get-WinLeanRegistryProtectedReason'
+    'Get-WinLeanRegistryDedicatedReason'
     'Read-WinLeanRegistryValue'
     'Write-WinLeanRegistryValue'
     'Remove-WinLeanRegistryValue'
