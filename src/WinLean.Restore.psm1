@@ -122,6 +122,7 @@ function Get-WinLeanRestorePlan {
                 ruleId                = [string]$change.ruleId
                 target                = [string]$change.target
                 scope                 = [string]$change.scope
+                requiresReboot        = [bool](Get-WinLeanProperty -InputObject $change -Name 'requiresReboot' -Default $false)
                 resource              = $change.resource
                 before                = $change.before
                 desired               = $change.desired
@@ -160,19 +161,40 @@ function New-WinLeanRestoreItemResult {
         [Parameter(Mandatory)] [ValidateSet('Restored', 'NotNeeded', 'Skipped', 'Blocked', 'Failed')] [string] $Status,
         [Parameter(Mandatory)] [string] $Reason,
         $After,
-        $Failure
+        $Failure,
+        [bool] $RebootRequired = $false
     )
 
     return [pscustomobject]@{
-        sequence = $Item.sequence
-        ruleId   = $Item.ruleId
-        target   = $Item.target
-        status   = $Status
-        reason   = $Reason
-        before   = $Item.before
-        after    = $After
-        failure  = $Failure
+        sequence       = $Item.sequence
+        ruleId         = $Item.ruleId
+        target         = $Item.target
+        status         = $Status
+        reason         = $Reason
+        before         = $Item.before
+        after          = $After
+        failure        = $Failure
+        rebootRequired = $RebootRequired
     }
+}
+
+function Get-WinLeanRestoreRebootRequirement {
+    <#
+    .SYNOPSIS
+        Whether writing a recorded state back needs a restart: the provider's report, or
+        the rule's declaration recorded in the backup when the provider cannot tell.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)] $Item,
+        [AllowNull()] $Reported
+    )
+
+    if ($Reported -is [bool]) {
+        return $Reported
+    }
+    return [bool](Get-WinLeanProperty -InputObject $Item -Name 'requiresReboot' -Default $false)
 }
 
 function Invoke-WinLeanRestorePlan {
@@ -226,11 +248,12 @@ function Invoke-WinLeanRestorePlan {
                 continue
             }
 
-            Restore-WinLeanResource -Resource $item.resource -State $item.before
+            $written = Restore-WinLeanResource -Resource $item.resource -State $item.before
+            $rebootRequired = Get-WinLeanRestoreRebootRequirement -Item $item -Reported $written.rebootRequired
             $after = Get-WinLeanResourceState -Resource $item.resource
             if (Test-WinLeanResourceStateEqual -Type $type -Expected $item.before -Actual $after) {
                 Write-WinLeanLog -Logger $Logger -Tag OK -Message 'Verified'
-                $results.Add((New-WinLeanRestoreItemResult -Item $item -Status Restored -Reason $item.reason -After $after))
+                $results.Add((New-WinLeanRestoreItemResult -Item $item -Status Restored -Reason $item.reason -After $after -RebootRequired $rebootRequired))
             }
             else {
                 $failure = [pscustomobject]@{
@@ -240,7 +263,7 @@ function Invoke-WinLeanRestorePlan {
                     hresult   = $null
                 }
                 Write-WinLeanLog -Logger $Logger -Level ERROR -Tag FAIL -Message $item.target -Detail $failure.message
-                $results.Add((New-WinLeanRestoreItemResult -Item $item -Status Failed -Reason 'Verification failed.' -After $after -Failure $failure))
+                $results.Add((New-WinLeanRestoreItemResult -Item $item -Status Failed -Reason 'Verification failed.' -After $after -Failure $failure -RebootRequired $rebootRequired))
             }
         }
         catch {
@@ -264,17 +287,18 @@ function Invoke-WinLeanRestorePlan {
     }
 
     $record = [pscustomobject]@{
-        PSTypeName    = 'WinLean.RestoreResult'
-        schemaVersion = 1
-        runId         = $RunId
-        backupId      = $RestorePlan.backupId
-        backupPath    = $RestorePlan.backupPath
-        startedAt     = $startedAt
-        completedAt   = Get-WinLeanTimestamp
-        force         = $RestorePlan.force
-        status        = $overall
-        summary       = [pscustomobject]$counts
-        results       = $all
+        PSTypeName     = 'WinLean.RestoreResult'
+        schemaVersion  = 1
+        runId          = $RunId
+        backupId       = $RestorePlan.backupId
+        backupPath     = $RestorePlan.backupPath
+        startedAt      = $startedAt
+        completedAt    = Get-WinLeanTimestamp
+        force          = $RestorePlan.force
+        status         = $overall
+        summary        = [pscustomobject]$counts
+        rebootRequired = (@($all | Where-Object { $_.rebootRequired }).Count -gt 0)
+        results        = $all
     }
     try {
         Add-WinLeanBackupFile -Path $RestorePlan.backupPath -FileName ("restore-{0}.json" -f $RunId) -InputObject $record

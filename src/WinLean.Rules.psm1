@@ -435,6 +435,8 @@ function Get-WinLeanRuleState {
                 desiredText    = Format-WinLeanResourceState -Type $resource.type -State $desired
                 inDesiredState = [bool](Test-WinLeanResourceStateEqual -Type $resource.type -Expected $desired -Actual $current)
                 restorable     = [bool](Test-WinLeanResourceStateRestorable -Type $resource.type -State $current)
+                available      = [bool](Test-WinLeanResourceStateAvailable -State $current)
+                note           = [string](Get-WinLeanProperty -InputObject $current -Name 'note' -Default '')
                 writable       = $writable
             })
     }
@@ -445,9 +447,41 @@ function Get-WinLeanRuleState {
         ruleId         = $Rule.id
         inDesiredState = (@($states | Where-Object { -not $_.inDesiredState }).Count -eq 0)
         restorable     = (@($states | Where-Object { -not $_.restorable }).Count -eq 0)
+        # Resources that do not exist on this system and are not already in their desired
+        # state: the rule cannot be applied here.
+        available      = (@($states | Where-Object { -not $_.available -and -not $_.inDesiredState }).Count -eq 0)
         writable       = if ($IncludeAccess) { (@($writableStates | Where-Object { -not $_.writable }).Count -eq 0) } else { $null }
         resources      = $states
     }
+}
+
+function Join-WinLeanRebootRequirement {
+    <#
+    .SYNOPSIS
+        Combines the reboot requirements reported for several changed resources.
+    .OUTPUTS
+        $true when any change needs a restart, $false when every change reported that it
+        does not, $null when at least one provider did not report (unknown).
+    #>
+    [CmdletBinding()]
+    param([AllowEmptyCollection()] [object[]] $Values = @())
+
+    if ($Values.Count -eq 0) {
+        return $null
+    }
+    $unknown = $false
+    foreach ($value in $Values) {
+        if ($value -is [bool] -and $value) {
+            return $true
+        }
+        if ($value -isnot [bool]) {
+            $unknown = $true
+        }
+    }
+    if ($unknown) {
+        return $null
+    }
+    return $false
 }
 
 function Set-WinLeanRuleState {
@@ -458,7 +492,9 @@ function Set-WinLeanRuleState {
         The state captured immediately before (Get-WinLeanRuleState). Resources already in
         their desired state are not touched, which keeps repeated runs idempotent.
     .OUTPUTS
-        Object listing the indexes of the resources that were written.
+        Object listing the indexes of the resources that were written and whether the
+        providers reported that a restart is needed (rebootRequired: $true, $false or
+        $null when unknown).
     #>
     [CmdletBinding()]
     param(
@@ -467,16 +503,19 @@ function Set-WinLeanRuleState {
     )
 
     $changed = New-Object -TypeName System.Collections.Generic.List[int]
+    $reboot = New-Object -TypeName System.Collections.Generic.List[object]
     foreach ($resourceState in $State.resources) {
         if ($resourceState.inDesiredState) {
             continue
         }
-        Set-WinLeanResource -Resource $Rule.resources[$resourceState.index]
+        $result = Set-WinLeanResource -Resource $Rule.resources[$resourceState.index]
         $changed.Add($resourceState.index)
+        $reboot.Add($result.rebootRequired)
     }
     return [pscustomobject]@{
         ruleId           = $Rule.id
         changedResources = $changed.ToArray()
+        rebootRequired   = Join-WinLeanRebootRequirement -Values $reboot.ToArray()
     }
 }
 
@@ -520,6 +559,7 @@ function Undo-WinLeanRuleState {
     )
 
     $mismatches = New-Object -TypeName System.Collections.Generic.List[string]
+    $reboot = New-Object -TypeName System.Collections.Generic.List[object]
     $captured = @($BeforeState.resources)
     for ($position = $captured.Count - 1; $position -ge 0; $position--) {
         $before = $captured[$position]
@@ -527,7 +567,8 @@ function Undo-WinLeanRuleState {
         try {
             $current = Get-WinLeanResourceState -Resource $resource
             if (-not (Test-WinLeanResourceStateEqual -Type $resource.type -Expected $before.current -Actual $current)) {
-                Restore-WinLeanResource -Resource $resource -State $before.current
+                $result = Restore-WinLeanResource -Resource $resource -State $before.current
+                $reboot.Add($result.rebootRequired)
                 $current = Get-WinLeanResourceState -Resource $resource
             }
             if (-not (Test-WinLeanResourceStateEqual -Type $resource.type -Expected $before.current -Actual $current)) {
@@ -539,9 +580,10 @@ function Undo-WinLeanRuleState {
         }
     }
     return [pscustomobject]@{
-        ruleId     = $Rule.id
-        restored   = ($mismatches.Count -eq 0)
-        mismatches = $mismatches.ToArray()
+        ruleId         = $Rule.id
+        restored       = ($mismatches.Count -eq 0)
+        mismatches     = $mismatches.ToArray()
+        rebootRequired = Join-WinLeanRebootRequirement -Values $reboot.ToArray()
     }
 }
 
@@ -553,6 +595,7 @@ Export-ModuleMember -Function @(
     'Test-WinLeanCondition'
     'Test-WinLeanRuleApplicable'
     'Get-WinLeanRuleState'
+    'Join-WinLeanRebootRequirement'
     'Set-WinLeanRuleState'
     'Confirm-WinLeanRuleState'
     'Undo-WinLeanRuleState'

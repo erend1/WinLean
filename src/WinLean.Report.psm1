@@ -437,6 +437,8 @@ function Format-WinLeanRestoreResultText {
         'Some values were not restored. Fix the cause and run the restore again; values already restored are skipped.'
     }
     ''
+    'Reboot required: ' + (Format-WinLeanYesNo -Value ([bool](Get-WinLeanProperty -InputObject $Result -Name 'rebootRequired' -Default $false)))
+    ''
 }
 
 function Format-WinLeanBackupListText {

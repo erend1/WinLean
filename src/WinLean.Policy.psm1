@@ -311,9 +311,7 @@ function Test-WinLeanItemsConflict {
         foreach ($rightResource in $Right.resources) {
             $rightInfo = Get-WinLeanResourceInfo -Resource $rightResource
             if ($leftInfo.identity -cne $rightInfo.identity) { continue }
-            $leftDesired = Get-WinLeanResourceDesiredState -Resource $leftResource
-            $rightDesired = Get-WinLeanResourceDesiredState -Resource $rightResource
-            if (-not (Test-WinLeanResourceStateEqual -Type $leftResource.type -Expected $leftDesired -Actual $rightDesired)) {
+            if (-not (Test-WinLeanResourceDesiredStateEqual -Left $leftResource -Right $rightResource)) {
                 return "'$($Right.id)' sets $($leftInfo.target) to a different value"
             }
         }
@@ -329,6 +327,7 @@ function New-WinLeanPlan {
         1. platform support (build, edition, installation type)      -> Unsupported
         2. compatibility conditions                                   -> Skipped
         3. current state (read-only)                                  -> AlreadySatisfied / Blocked
+           resources that do not exist on this system                 -> Unsupported
         4. conflicts between the remaining rules                      -> Blocked
         5. dependencies, in dependency order                          -> Blocked
         6. per-user target and write access                           -> Blocked
@@ -379,10 +378,22 @@ function New-WinLeanPlan {
             $item.status = 'AlreadySatisfied'
             continue
         }
+        if (-not $state.available) {
+            $item.status = 'Unsupported'
+            foreach ($resource in @($state.resources | Where-Object { -not $_.available -and -not $_.inDesiredState })) {
+                $reason = if ($resource.note) { $resource.note } else { "$($resource.target) does not exist on this system ($($resource.currentText))." }
+                $item.reasons.Add($reason)
+            }
+            continue
+        }
         if (-not $state.restorable) {
             $item.status = 'Blocked'
             foreach ($resource in @($state.resources | Where-Object { -not $_.restorable })) {
-                $item.reasons.Add("The current value of $($resource.target) ($($resource.currentText)) cannot be captured losslessly, so WinLean will not modify it.")
+                $reason = "The current value of $($resource.target) ($($resource.currentText)) cannot be captured losslessly, so WinLean will not modify it."
+                if ($resource.note) {
+                    $reason = "$reason $($resource.note)"
+                }
+                $item.reasons.Add($reason)
             }
             continue
         }
@@ -504,7 +515,8 @@ function New-WinLeanPlan {
     }
     $applicable = @($planItems | Where-Object { $_.status -eq 'Applicable' })
     $partOfDomain = if (Test-WinLeanDictionaryKey -Dictionary $facts -Key 'system.partOfDomain') { [bool]$facts['system.partOfDomain'] } else { $false }
-    if ($partOfDomain -and @($applicable | Where-Object { $_.mechanism -ne 'Preference' }).Count -gt 0) {
+    $policyItems = @($applicable | Where-Object { @($_.resources | Where-Object { $_.mechanism -ceq 'Policy' }).Count -gt 0 })
+    if ($partOfDomain -and $policyItems.Count -gt 0) {
         $warnings.Add('This device is joined to a domain. Organizational Group Policy may override or conflict with policy-based settings.')
     }
 

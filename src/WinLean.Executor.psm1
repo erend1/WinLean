@@ -41,6 +41,40 @@ function ConvertTo-WinLeanStateList {
     }
 }
 
+function Get-WinLeanResultRebootRequirement {
+    <#
+    .SYNOPSIS
+        Decides whether a rule result requires a restart.
+    .DESCRIPTION
+        A successful change needs a restart when a provider reported so, or when no
+        provider could tell (for example registry values) and the rule declares
+        takesEffect 'Reboot'. A provider that reports "no restart needed" for every
+        changed resource (for example DISM for an optional feature) overrides the
+        declaration. A rollback that reported a pending restart also counts, because the
+        system is then waiting for a restart to complete the rollback.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)] [PSTypeName('WinLean.Rule')] $Rule,
+        [Parameter(Mandatory)] [string] $Status,
+        [bool] $Changed,
+        [AllowNull()] $Reported,
+        [AllowNull()] $Rollback
+    )
+
+    if ($null -ne $Rollback -and [bool](Get-WinLeanProperty -InputObject $Rollback -Name 'rebootRequired' -Default $false)) {
+        return $true
+    }
+    if ($Status -ne 'Succeeded' -or -not $Changed) {
+        return $false
+    }
+    if ($Reported -is [bool]) {
+        return $Reported
+    }
+    return [bool]$Rule.requiresReboot
+}
+
 function New-WinLeanRuleResult {
     [CmdletBinding()]
     param(
@@ -51,6 +85,7 @@ function New-WinLeanRuleResult {
         $After,
         $Failure,
         $Rollback,
+        [AllowNull()] $RebootReported,
         [string] $StartedAt,
         [long] $DurationMs = 0
     )
@@ -62,7 +97,7 @@ function New-WinLeanRuleResult {
         changed        = $Changed
         before         = @(ConvertTo-WinLeanStateList -State $Before)
         after          = @(ConvertTo-WinLeanStateList -State $After)
-        rebootRequired = [bool]($Status -eq 'Succeeded' -and $Changed -and $Rule.requiresReboot)
+        rebootRequired = Get-WinLeanResultRebootRequirement -Rule $Rule -Status $Status -Changed $Changed -Reported $RebootReported -Rollback $Rollback
         takesEffect    = $Rule.takesEffect
         failure        = $Failure
         rollback       = $Rollback
@@ -91,9 +126,10 @@ function Invoke-WinLeanRollback {
         Write-WinLeanLog -Logger $Logger -Level WARN -Message "$($Rule.id): rollback incomplete; the backup can restore these values later" -Detail ($undo.mismatches -join '; ')
     }
     return [pscustomobject]@{
-        attempted  = $true
-        restored   = [bool]$undo.restored
-        mismatches = @($undo.mismatches)
+        attempted      = $true
+        restored       = [bool]$undo.restored
+        mismatches     = @($undo.mismatches)
+        rebootRequired = ($undo.rebootRequired -eq $true)
     }
 }
 
@@ -148,8 +184,8 @@ function Invoke-WinLeanRuleTransaction {
         return New-WinLeanRuleResult -Rule $Rule -Status Failed -Changed $false -Before $State -After $verification.state -Failure $failure -Rollback $rollback -StartedAt $startedAt -DurationMs $stopwatch.ElapsedMilliseconds
     }
 
-    Write-WinLeanLog -Logger $Logger -Tag OK -Message 'Verified' -Data @{ ruleId = $Rule.id; changedResources = $applied.changedResources }
-    return New-WinLeanRuleResult -Rule $Rule -Status Succeeded -Changed ($applied.changedResources.Count -gt 0) -Before $State -After $verification.state -StartedAt $startedAt -DurationMs $stopwatch.ElapsedMilliseconds
+    Write-WinLeanLog -Logger $Logger -Tag OK -Message 'Verified' -Data @{ ruleId = $Rule.id; changedResources = $applied.changedResources; rebootRequired = $applied.rebootRequired }
+    return New-WinLeanRuleResult -Rule $Rule -Status Succeeded -Changed ($applied.changedResources.Count -gt 0) -Before $State -After $verification.state -RebootReported $applied.rebootRequired -StartedAt $startedAt -DurationMs $stopwatch.ElapsedMilliseconds
 }
 
 function Get-WinLeanExecutionSummary {
@@ -164,7 +200,8 @@ function Get-WinLeanExecutionSummary {
         alreadySatisfied   = @($Results | Where-Object { $_.status -eq 'AlreadySatisfied' }).Count
         failed             = @($Results | Where-Object { $_.status -eq 'Failed' }).Count
         changed            = @($succeeded | Where-Object { $_.changed }).Count
-        rebootRequired     = (@($succeeded | Where-Object { $_.rebootRequired }).Count -gt 0)
+        # Failed rules count too: a rollback may be waiting for a restart.
+        rebootRequired     = (@($Results | Where-Object { $_.rebootRequired }).Count -gt 0)
         signOutRecommended = (@($succeeded | Where-Object { $_.changed -and @('SignOut', 'ExplorerRestart') -contains $_.takesEffect }).Count -gt 0)
     }
 }
@@ -251,11 +288,14 @@ function Invoke-WinLeanExecution {
             continue
         }
         $problem = $null
-        if (-not $state.restorable) {
+        if (-not $state.available) {
+            $problem = [pscustomobject]@{ class = 'Unsupported'; message = 'One or more resources of this rule do not exist on this system.'; exception = $null; hresult = $null }
+        }
+        elseif (-not $state.restorable) {
             $problem = [pscustomobject]@{ class = 'Unsupported'; message = 'The current state cannot be captured losslessly, so it is not modified.'; exception = $null; hresult = $null }
         }
         elseif ($state.writable -eq $false) {
-            $problem = [pscustomobject]@{ class = 'PermissionDenied'; message = 'No write access to one or more values of this rule.'; exception = $null; hresult = $null }
+            $problem = [pscustomobject]@{ class = 'PermissionDenied'; message = 'No write access to one or more resources of this rule.'; exception = $null; hresult = $null }
         }
         if ($problem) {
             Write-WinLeanLog -Logger $Logger -Level ERROR -Tag FAIL -Message "$($rule.id): $($problem.class)" -Detail $problem.message

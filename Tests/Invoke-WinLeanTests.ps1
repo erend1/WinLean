@@ -22,11 +22,18 @@
 
 .EXAMPLE
     .\Tests\Invoke-WinLeanTests.ps1 -Suite All -OutputPath .\TestResults\results.xml
+
+.EXAMPLE
+    .\Tests\Invoke-WinLeanTests.ps1 -Path .\Tests\Unit\Plan.Tests.ps1 -Verbosity Detailed
 #>
 [CmdletBinding()]
 param(
     [ValidateSet('Unit', 'Integration', 'All', 'Destructive')]
     [string] $Suite = 'Unit',
+
+    # Runs only these test files or folders (instead of the suite's folders). Tests tagged
+    # Destructive are still excluded unless -Suite Destructive is given.
+    [string[]] $Path,
 
     [switch] $Bootstrap,
 
@@ -86,6 +93,9 @@ $paths = switch ($Suite) {
     'Integration' { @(Join-Path -Path $PSScriptRoot -ChildPath 'Integration') }
     'All' { @((Join-Path -Path $PSScriptRoot -ChildPath 'Unit'), (Join-Path -Path $PSScriptRoot -ChildPath 'Integration')) }
     'Destructive' { @(Join-Path -Path $PSScriptRoot -ChildPath 'Destructive') }
+}
+if ($Path) {
+    $paths = @(foreach ($item in $Path) { (Resolve-Path -LiteralPath $item -ErrorAction Stop).ProviderPath })
 }
 
 if ($Suite -eq 'Destructive' -and $env:WINLEAN_ALLOW_DESTRUCTIVE_TESTS -ne 'YES') {

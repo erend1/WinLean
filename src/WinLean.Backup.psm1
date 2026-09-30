@@ -59,15 +59,18 @@ function New-WinLeanChangeRecords {
     $sequence = $StartSequence
     foreach ($resourceState in $State.resources) {
         [pscustomobject]@{
-            sequence      = $sequence
-            ruleId        = $Rule.id
-            resourceIndex = $resourceState.index
-            resource      = $Rule.resources[$resourceState.index]
-            identity      = $resourceState.identity
-            target        = $resourceState.target
-            scope         = $resourceState.scope
-            before        = $resourceState.current
-            desired       = $resourceState.desired
+            sequence       = $sequence
+            ruleId         = $Rule.id
+            resourceIndex  = $resourceState.index
+            resource       = $Rule.resources[$resourceState.index]
+            identity       = $resourceState.identity
+            target         = $resourceState.target
+            scope          = $resourceState.scope
+            # The rule's declaration; used by restore when a provider cannot tell whether
+            # writing the previous state back needs a restart.
+            requiresReboot = [bool]$Rule.requiresReboot
+            before         = $resourceState.current
+            desired        = $resourceState.desired
         }
         $sequence++
     }

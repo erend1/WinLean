@@ -95,15 +95,27 @@ Rules are data. The behaviour behind the interface comes from resource providers
 | Restore | write a captured state back (including removing keys WinLean created) |
 | FormatState | human-readable text |
 
-Adding a provider (planned: Service, ScheduledTask, OptionalFeature, AppxPackage) means
-implementing this contract and registering it in `Providers\WinLean.Providers.psm1`; the
-policy engine, executor, backup and restore do not change.
+Optional parts of the contract:
+
+| Part | Meaning | Engine behaviour |
+|---|---|---|
+| `available = $false` in a captured state | the resource does not exist on this system | plan: **Unsupported** unless already in the desired state; executor: `Unsupported` failure |
+| `note` in a captured state | why the resource cannot be changed | shown as the plan reason |
+| `rebootRequired` returned by Set / Restore | the provider knows whether a restart is needed | rule and restore results use it; when a provider cannot tell (`$null`), the rule's `takesEffect` decides |
+
+Resources of different types may share an identity when they manage the same object (a
+`StartupEntry` is a registry value); conflict detection then compares the desired states
+with both providers.
+
+Adding a provider (planned: Service, ScheduledTask, AppxPackage) means implementing this
+contract and registering it in `Providers\WinLean.Providers.psm1`; the policy engine,
+executor, backup and restore do not change.
 
 ## Plan evaluation order
 
 1. Platform: installation type Client, build >= 22000, rule `minBuild`/`maxBuild`, editions -> **Unsupported**
 2. Conditions against facts (`requirement.*`, `capability.*`, `system.*`); unknown facts fail -> **Skipped**
-3. Current state (read-only): unreadable -> **Blocked**; already desired -> **AlreadySatisfied**; not losslessly capturable -> **Blocked**
+3. Current state (read-only): unreadable -> **Blocked**; already desired -> **AlreadySatisfied**; resource does not exist on this system -> **Unsupported**; not losslessly capturable -> **Blocked**
 4. Conflicts among rules in effect: declared, or two rules setting the same value differently -> **Blocked** (both)
 5. Dependencies, in dependency order: dependency not Applicable/AlreadySatisfied (or, outside the profile, not satisfied) -> **Blocked**
 6. Per-user target: per-user rules while running as another account than the desktop user -> **Blocked**
@@ -137,6 +149,11 @@ For every Applicable rule, in dependency order:
 3. read everything back; mismatch -> `VerificationFailed`
 4. on any failure restore the rule's captured state and verify that too (rollback)
 5. rules depending on a failed rule are not attempted (`DependencyFailure`)
+
+A result requires a restart when a provider reported one for a changed resource, or when no
+provider could tell and the rule declares `takesEffect: Reboot`; a rollback that left a
+restart pending is reported as well. Change records store the rule's declaration so that a
+restore can report restarts in the same way.
 
 Failure classes: PermissionDenied, Unsupported, CommandFailed, VerificationFailed,
 DependencyFailure, StateUnavailable, BackupFailed, ProtectedResource, UnexpectedError.

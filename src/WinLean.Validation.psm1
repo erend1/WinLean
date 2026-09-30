@@ -632,18 +632,17 @@ function Test-WinLeanRuleCatalog {
     foreach ($rule in $byId.Values) {
         foreach ($resource in $rule.resources) {
             $identity = (Get-WinLeanResourceInfo -Resource $resource).identity
-            $desired = Get-WinLeanResourceDesiredState -Resource $resource
             if (-not $targets.ContainsKey($identity)) {
                 $targets[$identity] = New-Object -TypeName System.Collections.Generic.List[object]
             }
             foreach ($other in $targets[$identity]) {
-                $differs = -not (Test-WinLeanResourceStateEqual -Type $resource.type -Expected $other.desired -Actual $desired)
+                $differs = -not (Test-WinLeanResourceDesiredStateEqual -Left $other.resource -Right $resource)
                 $declared = ($rule.conflicts -ccontains $other.rule.id) -or ($other.rule.conflicts -ccontains $rule.id)
                 if ($differs -and -not $declared) {
                     New-WinLeanIssue -Severity Warning -Code 'UndeclaredConflict' -Source $rule.id -Message "Sets '$identity' differently from '$($other.rule.id)' but neither rule declares the conflict."
                 }
             }
-            $targets[$identity].Add([pscustomobject]@{ rule = $rule; desired = $desired })
+            $targets[$identity].Add([pscustomobject]@{ rule = $rule; resource = $resource })
         }
     }
 }
