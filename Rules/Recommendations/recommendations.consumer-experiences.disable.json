@@ -31,6 +31,11 @@
     "The policy explanation states that it only applies to Enterprise and Education SKUs, and the Policy CSP (Experience/AllowWindowsConsumerFeatures) lists it as not applicable to Pro.",
     "Requires Administrator rights (the value is stored under HKLM)."
   ],
+  "benefit": {
+    "type": "Distraction",
+    "value": "Moderate",
+    "measurement": "NotMeasured"
+  },
   "references": [
     {
       "title": "Microsoft Learn - Policy CSP Experience: AllowWindowsConsumerFeatures (group policy mapping: CloudContent.admx, DisableWindowsConsumerFeatures)",
@@ -40,6 +45,9 @@
       "title": "Microsoft Learn - Manage connections from Windows operating system components to Microsoft services, 18.16 Feedback & diagnostics",
       "url": "https://learn.microsoft.com/en-us/windows/privacy/manage-connections-from-windows-operating-system-components-to-microsoft-services"
     }
+  ],
+  "validation": [
+    { "method": "SourceReview", "build": 26200, "date": "2026-09-28" }
   ],
   "resources": [
     {

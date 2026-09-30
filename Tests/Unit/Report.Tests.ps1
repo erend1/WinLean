@@ -3,16 +3,22 @@ BeforeAll {
     Import-WinLeanTestModule -Name 'WinLean.Report', 'WinLean.Common'
 
     function New-PlanItem {
-        param([string] $Id, [string] $Status, [string[]] $Reasons = @(), [object[]] $Resources = @())
-        return [pscustomobject]@{
+        <# Without -Benefit the item looks like a plan item written by WinLean 0.1. #>
+        param([string] $Id, [string] $Status, [string[]] $Reasons = @(), [object[]] $Resources = @(), $Benefit)
+        $item = [pscustomobject]@{
             ruleId = $Id; name = "Name of $Id"; category = 'Privacy'; description = 'd'; status = $Status; reasons = $Reasons; notes = @()
             risk = 'Low'; reversible = $true; requiresReboot = $false; takesEffect = 'SignOut'; scope = 'CurrentUser'; mechanism = 'Preference'
             requiresAdministrator = $false; untestedBuild = $false; dependencies = @(); resources = $Resources
         }
+        if ($Benefit) {
+            $item | Add-Member -NotePropertyName 'benefit' -NotePropertyValue $Benefit
+            $item | Add-Member -NotePropertyName 'lastValidated' -NotePropertyValue '2026-09-28'
+        }
+        return $item
     }
 
     function New-Backup {
-        param($Execution, $BenchmarkBefore)
+        param($Execution, $BenchmarkBefore, [object[]] $Items = @(New-PlanItem -Id 'privacy.a.disable' -Status 'Applicable'))
         return [pscustomobject]@{
             id = '2026-09-27_18-45-12'; path = (Join-Path $TestDrive 'Backups\2026-09-27_18-45-12')
             manifest = [pscustomobject]@{
@@ -23,7 +29,7 @@ BeforeAll {
             plan = [pscustomobject]@{
                 profile = [pscustomobject]@{ name = 'Safe'; chain = @('Safe'); maxRisk = 'Low'; excluded = @() }
                 options = [pscustomobject]@{ allowUntestedBuild = $false }
-                items = @(New-PlanItem -Id 'privacy.a.disable' -Status 'Applicable')
+                items = $Items
                 compatibility = [pscustomobject]@{ exists = $false; source = $null; declared = [pscustomobject]@{}; undeclared = @('printer'); capabilities = [pscustomobject]@{} }
             }
             execution = $Execution
@@ -71,16 +77,65 @@ Describe 'Plan text' {
         $text | Should -BeLike '*SKIPPED*privacy.b.disable*Reason: Printing must remain available.*'
         $text | Should -BeLike '*Reboot required: No*'
         $text | Should -BeLike '*Warning: Example warning*'
+        $text | Should -BeLike '*Benefit: unspecified   Last validated: unknown*'
+    }
+
+    It 'summarizes the benefit of the rules to apply' {
+        $privacy = [pscustomobject]@{ type = 'Privacy'; value = 'Low'; measurement = 'NotMeasured' }
+        $distraction = [pscustomobject]@{ type = 'Distraction'; value = 'Moderate'; measurement = 'NotMeasured' }
+        $plan = [pscustomobject]@{
+            profile = [pscustomobject]@{ name = 'Safe'; chain = @('Safe'); maxRisk = 'Low' }
+            system = $null
+            session = [pscustomobject]@{ userName = 'TEST\user'; isAdministrator = $false }
+            compatibility = $null
+            items = @(
+                New-PlanItem -Id 'privacy.a.disable' -Status 'Applicable' -Benefit $privacy
+                New-PlanItem -Id 'privacy.b.disable' -Status 'Applicable' -Benefit $privacy
+                New-PlanItem -Id 'recommendations.c.disable' -Status 'Applicable' -Benefit $distraction
+                New-PlanItem -Id 'privacy.d.disable' -Status 'AlreadySatisfied' -Benefit $privacy
+            )
+            summary = [pscustomobject]@{
+                total = 4; counts = [pscustomobject]@{ Applicable = 3; AlreadySatisfied = 1; Skipped = 0; Blocked = 0; RequiresConfirmation = 0; Unsupported = 0 }
+                rebootRequired = $false; signOutRecommended = $false; administratorRequiredForItems = @()
+            }
+            warnings = @()
+        }
+        $text = (Format-WinLeanPlanText -Plan $plan) -join "`n"
+        $text | Should -BeLike '*Benefit of the rules to apply: Privacy 2, Distraction 1 (qualitative; see each rule)*'
+        $text | Should -BeLike '*recommendations.c.disable*Benefit: Distraction (Moderate, not measured)   Last validated: 2026-09-28*'
+    }
+}
+
+Describe 'Rule list' {
+    It 'shows the benefit and the latest validation of every rule' {
+        $rule = [pscustomobject]@{
+            id = 'privacy.a.disable'; name = 'Turn off A'; risk = 'Low'; scope = 'CurrentUser'; mechanism = 'Preference'
+            benefit = [pscustomobject]@{ type = 'Privacy'; value = 'Moderate'; measurement = 'NotMeasured' }
+            validation = @(
+                [pscustomobject]@{ method = 'VmApplyRestore'; build = 26200; date = '2026-10-01' }
+                [pscustomobject]@{ method = 'SourceReview'; build = 26100; date = '2026-09-01' }
+            )
+        }
+        $text = (Format-WinLeanRuleListText -Rules @($rule)) -join "`n"
+        $text | Should -BeLike '*privacy.a.disable*Low*CurrentUser*Preference*Privacy/Moderate*-*'
+        $text | Should -BeLike '*Validated: VM apply/restore on build 26200 (2026-10-01)*'
     }
 }
 
 Describe 'Markdown report' {
     It 'renders a run in which every rule was applied (regression: no skipped rules)' {
         $markdown = ConvertTo-WinLeanMarkdownReport -Backup (New-Backup -Execution (New-Execution -Results @($script:Succeeded)))
-        $markdown.Contains('| `privacy.a.disable` | A | Applied and verified. HKCU:\Software\X\A: not set -> 1 (DWord) |') | Should -BeTrue
+        $markdown.Contains('| `privacy.a.disable` | A | unspecified | Applied and verified. HKCU:\Software\X\A: not set -> 1 (DWord) |') | Should -BeTrue
         $markdown | Should -BeLike '*## Skipped, blocked and unsupported rules*None.*'
         $markdown | Should -BeLike '*## Failed rules*None.*'
         $markdown | Should -BeLike '*Sign out recommended: Yes*'
+    }
+
+    It 'shows the benefit of applied rules recorded in the plan' {
+        $item = New-PlanItem -Id 'privacy.a.disable' -Status 'Applicable' -Benefit ([pscustomobject]@{ type = 'Privacy'; value = 'Low'; measurement = 'NotMeasured' })
+        $markdown = ConvertTo-WinLeanMarkdownReport -Backup (New-Backup -Execution (New-Execution -Results @($script:Succeeded)) -Items @($item))
+        $markdown | Should -BeLike '*Benefit of the applied rules: Privacy 1.*'
+        $markdown.Contains('| `privacy.a.disable` | A | Privacy (Low, not measured) | Applied and verified.') | Should -BeTrue
     }
 
     It 'renders a run without any results' {

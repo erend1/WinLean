@@ -28,11 +28,19 @@
     "Microsoft's Microsoft.Windows.Developer DSC module (WindowsExplorer resource) uses HideFileExt = 0 for 'Show' and 1 for 'Hide', and restarts File Explorer to apply the change. WinLean does not restart File Explorer; open windows update after a refresh, a File Explorer restart or signing out.",
     "Per-user preference; no Administrator rights are needed."
   ],
+  "benefit": {
+    "type": "Security",
+    "value": "Low",
+    "measurement": "NotMeasured"
+  },
   "references": [
     {
       "title": "microsoft/winget-dsc - Microsoft.Windows.Developer module, WindowsExplorer resource (HideFileExt)",
       "url": "https://github.com/microsoft/winget-dsc/blob/main/resources/Microsoft.Windows.Developer/Microsoft.Windows.Developer.psm1"
     }
+  ],
+  "validation": [
+    { "method": "SourceReview", "build": 26200, "date": "2026-09-28" }
   ],
   "resources": [
     {

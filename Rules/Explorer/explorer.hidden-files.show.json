@@ -29,11 +29,19 @@
     "Microsoft's Microsoft.Windows.Developer DSC module (WindowsExplorer resource) uses Hidden = 1 for 'Show'.",
     "Not part of Safe or Lean: it is a personal preference rather than an optimization. See Profiles/Example.Custom.json."
   ],
+  "benefit": {
+    "type": "Usability",
+    "value": "Cosmetic",
+    "measurement": "NotMeasured"
+  },
   "references": [
     {
       "title": "microsoft/winget-dsc - Microsoft.Windows.Developer module, WindowsExplorer resource (Hidden)",
       "url": "https://github.com/microsoft/winget-dsc/blob/main/resources/Microsoft.Windows.Developer/Microsoft.Windows.Developer.psm1"
     }
+  ],
+  "validation": [
+    { "method": "SourceReview", "build": 26200, "date": "2026-09-28" }
   ],
   "resources": [
     {

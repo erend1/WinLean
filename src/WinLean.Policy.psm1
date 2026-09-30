@@ -281,6 +281,9 @@ function New-WinLeanPlanItem {
         takesEffect           = $Rule.takesEffect
         scope                 = $Rule.scope
         mechanism             = $Rule.mechanism
+        benefit               = $Rule.benefit
+        lastValidated         = $Rule.lastValidated
+        vmValidated           = $Rule.vmValidated
         dependencies          = $Rule.dependencies
         status                = $null
         reasons               = New-Object -TypeName System.Collections.Generic.List[string]
@@ -482,6 +485,9 @@ function New-WinLeanPlan {
                 continue
             }
         }
+        if ((Get-WinLeanRiskRank -Risk $rule.risk) -ge 1 -and -not $rule.vmValidated) {
+            $item.notes.Add("This $($rule.risk) risk rule has not been applied and restored in a disposable VM yet (no VmApplyRestore validation record). Try it in a VM before applying it to a machine you depend on.")
+        }
         $item.status = 'Applicable'
     }
 
@@ -502,6 +508,9 @@ function New-WinLeanPlan {
                 takesEffect           = $item.takesEffect
                 scope                 = $item.scope
                 mechanism             = $item.mechanism
+                benefit               = $item.benefit
+                lastValidated         = $item.lastValidated
+                vmValidated           = $item.vmValidated
                 requiresAdministrator = $item.requiresAdministrator
                 untestedBuild         = $item.untestedBuild
                 dependencies          = $item.dependencies
@@ -570,7 +579,34 @@ function Get-WinLeanPlanSummary {
         rebootRequired                = (@($applicable | Where-Object { $_.requiresReboot }).Count -gt 0)
         signOutRecommended            = (@($applicable | Where-Object { @('SignOut', 'ExplorerRestart') -contains $_.takesEffect }).Count -gt 0)
         administratorRequiredForItems = @($Items | Where-Object { $_.requiresAdministrator } | ForEach-Object { $_.ruleId })
+        benefits                      = Get-WinLeanBenefitSummary -Items $applicable
     }
+}
+
+function Get-WinLeanBenefitSummary {
+    <#
+    .SYNOPSIS
+        Counts rules (plan items or rules) per benefit type, in the vocabulary order.
+        Items without benefit information (plans written by WinLean 0.1) are counted as
+        'Unspecified'.
+    .OUTPUTS
+        Object with one property per benefit type that occurs.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Items)
+
+    $counts = [ordered]@{}
+    foreach ($type in @((Get-WinLeanRuleVocabulary).benefitTypes) + 'Unspecified') {
+        $count = @($Items | Where-Object {
+                $benefit = Get-WinLeanProperty -InputObject $_ -Name 'benefit'
+                $itemType = [string](Get-WinLeanProperty -InputObject $benefit -Name 'type' -Default 'Unspecified')
+                $itemType -ceq $type
+            }).Count
+        if ($count -gt 0) {
+            $counts[$type] = $count
+        }
+    }
+    return [pscustomobject]$counts
 }
 
 function Get-WinLeanPlanStatuses {
@@ -593,5 +629,6 @@ Export-ModuleMember -Function @(
     'New-WinLeanPlanContext'
     'New-WinLeanPlan'
     'Get-WinLeanPlanSummary'
+    'Get-WinLeanBenefitSummary'
     'Get-WinLeanPlanStatuses'
 )

@@ -107,6 +107,55 @@ Describe 'Evidence standard' {
     }
 }
 
+Describe 'Benefit and validation metadata' {
+    It 'reports <Code> for <Case>' -ForEach @(
+        @{ Case = 'a missing benefit'; Code = 'Benefit'; Extra = @{ benefit = $null } }
+        @{ Case = 'an unknown benefit property'; Code = 'Benefit'; Extra = @{ benefit = @{ type = 'Privacy'; value = 'Low'; measurement = 'NotMeasured'; score = 7 } } }
+        @{ Case = 'an unknown benefit type'; Code = 'Benefit'; Extra = @{ benefit = @{ type = 'Speed'; value = 'Low'; measurement = 'NotMeasured' } } }
+        @{ Case = 'an unknown benefit value'; Code = 'Benefit'; Extra = @{ benefit = @{ type = 'Privacy'; value = 'Huge'; measurement = 'NotMeasured' } } }
+        @{ Case = 'an unmeasured performance claim'; Code = 'Benefit'; Extra = @{ benefit = @{ type = 'Performance'; value = 'Low'; measurement = 'NotMeasured' } } }
+        @{ Case = 'an unmeasured moderate background-activity claim'; Code = 'Benefit'; Extra = @{ benefit = @{ type = 'BackgroundActivity'; value = 'Moderate'; measurement = 'NotMeasured' } } }
+        @{ Case = 'a measurement without a write-up'; Code = 'Benefit'; Extra = @{ benefit = @{ type = 'Performance'; value = 'Low'; measurement = 'Measured' } } }
+        @{ Case = 'a write-up outside Docs/Measurements'; Code = 'Benefit'; Extra = @{ benefit = @{ type = 'Performance'; value = 'Low'; measurement = 'Measured'; measurementFile = 'C:\m.md' } } }
+        @{ Case = 'a write-up for an unmeasured benefit'; Code = 'Benefit'; Extra = @{ benefit = @{ type = 'Privacy'; value = 'Low'; measurement = 'NotMeasured'; measurementFile = 'Docs/Measurements/m.md' } } }
+        @{ Case = 'no validation record'; Code = 'Validation'; Extra = @{ validation = @() } }
+        @{ Case = 'an unknown validation method'; Code = 'Validation'; Extra = @{ validation = @(@{ method = 'Guess'; build = 26200; date = '2026-09-28' }) } }
+        @{ Case = 'a date in another format'; Code = 'Validation'; Extra = @{ validation = @(@{ method = 'SourceReview'; build = 26200; date = '28.09.2026' }) } }
+        @{ Case = 'a date in the future'; Code = 'Validation'; Extra = @{ validation = @(@{ method = 'SourceReview'; build = 26200; date = '2999-01-01' }) } }
+        @{ Case = 'a VM validation without its record'; Code = 'Validation'; Extra = @{ validation = @(@{ method = 'VmApplyRestore'; build = 26200; date = '2026-09-28' }) } }
+        @{ Case = 'a maxValidatedBuild that differs from the newest validation'; Code = 'Validation'; Extra = @{ validation = @(@{ method = 'SourceReview'; build = 26100; date = '2026-09-28' }) } }
+        @{ Case = 'a validation below the minimum build'; Code = 'Validation'; Extra = @{ windows = @{ minBuild = 26100; maxValidatedBuild = 26200 }; validation = @(@{ method = 'SourceReview'; build = 26200; date = '2026-09-28' }, @{ method = 'SourceReview'; build = 22631; date = '2026-09-01' }) } }
+        @{ Case = 'a Medium risk rule without a requirement condition'; Code = 'Conditions'; Extra = @{ risk = 'Medium' } }
+        @{ Case = 'a High risk rule with only a capability condition'; Code = 'Conditions'; Extra = @{ risk = 'High'; conditions = @(@{ fact = 'capability.batteryPresent'; operator = 'Equals'; value = $false }) } }
+    ) {
+        Get-IssueCodes -Definition (New-TestRuleDefinition -Extra $Extra) | Should -Contain $Code
+    }
+
+    It 'accepts <Case>' -ForEach @(
+        @{ Case = 'a measured performance benefit'; Extra = @{ benefit = @{ type = 'Performance'; value = 'Moderate'; measurement = 'Measured'; measurementFile = 'Docs/Measurements/privacy.test-rule.disable.md' } } }
+        @{ Case = 'a low, unmeasured background-activity benefit'; Extra = @{ benefit = @{ type = 'BackgroundActivity'; value = 'Low'; measurement = 'NotMeasured' } } }
+        @{ Case = 'a VM validation with its record'; Extra = @{ validation = @(@{ method = 'VmApplyRestore'; build = 26200; date = '2026-09-29'; file = 'Docs/Validation/2026-09-29-26200.md'; notes = 'Hyper-V VM' }, @{ method = 'SourceReview'; build = 26100; date = '2026-09-01' }) } }
+        @{ Case = 'a Medium risk rule with a requirement condition'; Extra = @{ risk = 'Medium'; conditions = @(@{ fact = 'requirement.printer'; operator = 'Equals'; value = $false }) } }
+    ) {
+        @(Test-WinLeanRuleDefinition -Definition (New-TestRuleDefinition -Extra $Extra) | ForEach-Object { "$($_.code): $($_.message)" }) | Should -BeNullOrEmpty
+    }
+
+    It 'accepts dates that PowerShell 7.0-7.4 parsed from JSON as DateTime' {
+        $definition = New-TestRuleDefinition
+        $definition.validation[0].date = [datetime]::new(2026, 9, 28)
+        @(Test-WinLeanRuleDefinition -Definition $definition).Count | Should -Be 0
+        (ConvertTo-WinLeanRule -Definition $definition).lastValidated | Should -Be '2026-09-28'
+    }
+
+    It 'normalizes validation records newest first' {
+        $rule = New-TestRule -Extra @{ validation = @(@{ method = 'SourceReview'; build = 26100; date = '2026-09-01' }, @{ method = 'VmApplyRestore'; build = 26200; date = '2026-09-29'; file = 'Docs/Validation/v.md' }) }
+        $rule.validation[0].date | Should -Be '2026-09-29'
+        $rule.lastValidated | Should -Be '2026-09-29'
+        $rule.vmValidated | Should -BeTrue
+        $rule.benefit.type | Should -Be 'Privacy'
+    }
+}
+
 Describe 'Catalog validation' {
     It 'reports duplicate ids, unknown references and contradictions' {
         $rules = @(

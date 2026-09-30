@@ -168,6 +168,17 @@ Describe 'New-WinLeanPlan' {
         $plan.warnings | Should -Contain 'This device is joined to a domain. Organizational Group Policy may override or conflict with policy-based settings.'
     }
 
+    It 'counts the benefits of applicable rules and notes Medium risk rules not yet validated in a VM' {
+        $condition = @{ fact = 'requirement.printer'; operator = 'Equals'; value = $false }
+        $medium = New-ValueRule -Id 'privacy.medium.disable' -Name 'Medium' -Extra @{ Risk = 'Medium'; Conditions = @($condition) }
+        $low = New-ValueRule -Id 'privacy.low.disable' -Name 'Low'
+        $plan = Invoke-Plan -Rules @($medium, $low) -Facts (New-TestFacts -Requirements @{ printer = $false })
+        $plan.summary.benefits.Privacy | Should -Be 2
+        (Get-PlanItem $plan 'privacy.medium.disable').notes[0] | Should -BeLike '*has not been applied and restored in a disposable VM yet*'
+        @((Get-PlanItem $plan 'privacy.low.disable').notes).Count | Should -Be 0
+        (Get-PlanItem $plan 'privacy.low.disable').lastValidated | Should -Be '2026-09-28'
+    }
+
     It 'produces a plan that survives JSON serialization' {
         $plan = Invoke-Plan -Rules @(New-ValueRule -Id 'privacy.todo.disable')
         $json = $plan | ConvertTo-Json -Depth 30

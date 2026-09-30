@@ -143,6 +143,30 @@ function ConvertTo-WinLeanRule {
             [pscustomobject]@{ title = [string]$reference.title; url = [string]$reference.url }
         })
 
+    $benefitDefinition = $Definition.benefit
+    $benefit = [pscustomobject]@{
+        type            = [string]$benefitDefinition.type
+        value           = [string]$benefitDefinition.value
+        measurement     = [string]$benefitDefinition.measurement
+        measurementFile = [string](Get-WinLeanProperty -InputObject $benefitDefinition -Name 'measurementFile' -Default '')
+    }
+
+    # Validation records, newest first.
+    $validation = @(foreach ($record in @(Get-WinLeanArrayProperty -InputObject $Definition -Name 'validation')) {
+            [pscustomobject]@{
+                method = [string]$record.method
+                build  = [int]$record.build
+                date   = (ConvertTo-WinLeanValidationDate -Value $record.date).ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+                file   = [string](Get-WinLeanProperty -InputObject $record -Name 'file' -Default '')
+                notes  = [string](Get-WinLeanProperty -InputObject $record -Name 'notes' -Default '')
+            }
+        })
+    if ($validation.Count -gt 1) {
+        $dates = [string[]]@($validation | ForEach-Object { $_.date })
+        [System.Array]::Sort($dates, $validation, [System.StringComparer]::Ordinal)
+        [System.Array]::Reverse($validation)
+    }
+
     return [pscustomobject]@{
         PSTypeName     = 'WinLean.Rule'
         id             = [string]$Definition.id
@@ -161,7 +185,11 @@ function ConvertTo-WinLeanRule {
         effects        = [string[]]@(Get-WinLeanArrayProperty -InputObject $Definition -Name 'effects')
         sideEffects    = [string[]]@(Get-WinLeanArrayProperty -InputObject $Definition -Name 'sideEffects')
         notes          = [string[]]@(Get-WinLeanArrayProperty -InputObject $Definition -Name 'notes')
+        benefit        = $benefit
         references     = $references
+        validation     = $validation
+        lastValidated  = if ($validation.Count -gt 0) { $validation[0].date } else { $null }
+        vmValidated    = (@($validation | Where-Object { $_.method -ceq 'VmApplyRestore' }).Count -gt 0)
         tags           = [string[]]@(Get-WinLeanArrayProperty -InputObject $Definition -Name 'tags')
         resources      = $resources
         scope          = if ($scopes.Count -eq 1) { $scopes[0] } else { 'Mixed' }

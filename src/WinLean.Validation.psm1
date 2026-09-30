@@ -49,8 +49,24 @@ $script:MinimumWindowsBuild = 22000
 $script:RuleProperties = @(
     '$schema', 'schemaVersion', 'id', 'name', 'category', 'description', 'rationale', 'risk',
     'reversible', 'requiresReboot', 'takesEffect', 'windows', 'conditions', 'dependencies',
-    'conflicts', 'effects', 'sideEffects', 'notes', 'references', 'evidence', 'resources', 'tags'
+    'conflicts', 'effects', 'sideEffects', 'notes', 'benefit', 'references', 'evidence',
+    'validation', 'resources', 'tags'
 )
+
+# What a rule is good for (qualitative; there are no numeric scores). Performance claims
+# need a recorded measurement; see Docs/Rules.md.
+$script:BenefitProperties = @('type', 'value', 'measurement', 'measurementFile')
+$script:BenefitTypes = @('Performance', 'BackgroundActivity', 'Privacy', 'Security', 'Storage', 'Usability', 'Distraction')
+$script:BenefitValues = @('Cosmetic', 'Low', 'Moderate', 'High')
+$script:BenefitMeasurements = @('Measured', 'NotMeasured')
+$script:MeasurementFilePattern = '^Docs/Measurements/[A-Za-z0-9][A-Za-z0-9._-]*\.md$'
+
+# How, on which build and when a rule was validated (provenance). SourceReview: the setting
+# was checked against its sources; VmApplyRestore: applied, verified and restored with
+# WinLean in a disposable VM (Docs/VmValidation.md), recorded in Docs/Validation.
+$script:ValidationProperties = @('method', 'build', 'date', 'file', 'notes')
+$script:ValidationMethods = @('SourceReview', 'VmApplyRestore')
+$script:ValidationFilePattern = '^Docs/Validation/[A-Za-z0-9][A-Za-z0-9._-]*\.md$'
 $script:WindowsProperties = @('minBuild', 'maxBuild', 'maxValidatedBuild', 'editions')
 $script:ConditionProperties = @('fact', 'operator', 'value', 'reason')
 $script:ReferenceProperties = @('title', 'url')
@@ -95,6 +111,27 @@ function Get-WinLeanRiskLevels {
     param()
 
     $script:RiskLevels
+}
+
+function Get-WinLeanRuleVocabulary {
+    <#
+    .SYNOPSIS
+        Returns the allowed values of the enumerated rule fields (used to keep the JSON
+        schema and the documentation consistent with this validator).
+    #>
+    [CmdletBinding()]
+    param()
+
+    return [pscustomobject]@{
+        categories          = [string[]]@($script:Categories.Keys)
+        risks               = [string[]]$script:RiskLevels
+        takesEffect         = [string[]]$script:TakesEffectValues
+        benefitTypes        = [string[]]$script:BenefitTypes
+        benefitValues       = [string[]]$script:BenefitValues
+        benefitMeasurements = [string[]]$script:BenefitMeasurements
+        evidenceMethods     = [string[]]$script:EvidenceMethods
+        validationMethods   = [string[]]$script:ValidationMethods
+    }
 }
 
 function Get-WinLeanRiskRank {
@@ -299,11 +336,21 @@ function Test-WinLeanRuleDefinition {
     }
     else {
         $index = 0
+        $requirementConditions = 0
         foreach ($condition in $conditions) {
             foreach ($message in @(Test-WinLeanConditionDefinition -Condition $condition -KnownRequirementKeys $KnownRequirementKeys)) {
                 & $addError 'Conditions' "conditions[$index]: $message"
             }
+            $fact = Get-WinLeanProperty -InputObject $condition -Name 'fact'
+            if ($fact -is [string] -and $fact.StartsWith('requirement.', [System.StringComparison]::Ordinal)) {
+                $requirementConditions++
+            }
             $index++
+        }
+        # Medium and High risk rules are feature-dependent by definition: the user must
+        # have declared that the affected feature is not needed.
+        if ((Get-WinLeanRiskRank -Risk $risk) -ge 1 -and $requirementConditions -eq 0) {
+            & $addError 'Conditions' "Rules with risk $risk must have at least one compatibility condition on a 'requirement.*' fact."
         }
     }
 
@@ -369,6 +416,41 @@ function Test-WinLeanRuleDefinition {
     }
     if ($referenceCount + $evidenceCount -lt 1) {
         & $addError 'References' "A rule needs at least one source: a reference that documents the setting, or a recorded observation in 'evidence' (see Docs/Rules.md)."
+    }
+
+    # Benefit (qualitative) and validation records (provenance).
+    foreach ($message in @(Test-WinLeanBenefitDefinition -Benefit (Get-WinLeanProperty -InputObject $Definition -Name 'benefit'))) {
+        & $addError 'Benefit' $message
+    }
+    $validation = Get-WinLeanProperty -InputObject $Definition -Name 'validation' -NoEnumerate
+    $newestValidatedBuild = 0
+    if (-not (Test-WinLeanEnumerable -Value $validation) -or @($validation).Count -lt 1) {
+        & $addError 'Validation' "'validation' must list at least one validation record (how, on which build and when the rule was validated)."
+    }
+    else {
+        $index = 0
+        foreach ($record in $validation) {
+            foreach ($message in @(Test-WinLeanValidationRecord -Record $record)) {
+                & $addError 'Validation' "validation[$index]: $message"
+            }
+            $build = Get-WinLeanProperty -InputObject $record -Name 'build'
+            if (Test-WinLeanInteger -Value $build) {
+                if ([int]$build -gt $newestValidatedBuild) {
+                    $newestValidatedBuild = [int]$build
+                }
+                $minBuild = Get-WinLeanProperty -InputObject $windows -Name 'minBuild'
+                $maxBuild = Get-WinLeanProperty -InputObject $windows -Name 'maxBuild'
+                if (((Test-WinLeanInteger -Value $minBuild) -and [int]$build -lt [int]$minBuild) -or
+                    ((Test-WinLeanInteger -Value $maxBuild) -and [int]$build -gt [int]$maxBuild)) {
+                    & $addError 'Validation' "validation[$index]: build $build is outside the supported range of the rule ('windows.minBuild' to 'windows.maxBuild')."
+                }
+            }
+            $index++
+        }
+        $maxValidated = Get-WinLeanProperty -InputObject $windows -Name 'maxValidatedBuild'
+        if ((Test-WinLeanInteger -Value $maxValidated) -and $newestValidatedBuild -gt 0 -and [int]$maxValidated -ne $newestValidatedBuild) {
+            & $addError 'Validation' "'windows.maxValidatedBuild' ($maxValidated) must equal the newest build in 'validation' ($newestValidatedBuild)."
+        }
     }
     if (Test-WinLeanProperty -InputObject $Definition -Name 'tags') {
         if (-not (Test-WinLeanStringArray -Value (Get-WinLeanProperty -InputObject $Definition -Name 'tags' -NoEnumerate) -Pattern $script:TagPattern)) {
@@ -579,6 +661,128 @@ function Test-WinLeanEvidenceDefinition {
     }
     if (-not (Test-WinLeanNonEmptyString -Value (Get-WinLeanProperty -InputObject $Evidence -Name 'summary'))) {
         "'summary' must describe what was observed"
+    }
+}
+
+function Test-WinLeanBenefitDefinition {
+    <#
+    .SYNOPSIS
+        Validates the benefit of a rule: type, qualitative value and whether the effect was
+        measured. Performance claims (and large background-activity claims) need a
+        recorded measurement.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowNull()] $Benefit)
+
+    if (-not (Test-WinLeanObject -Value $Benefit)) {
+        "'benefit' must be an object with type, value and measurement"
+        return
+    }
+    foreach ($propertyName in @(Get-WinLeanPropertyNames -InputObject $Benefit)) {
+        if ($script:BenefitProperties -cnotcontains $propertyName) {
+            "unknown property 'benefit.$propertyName'"
+        }
+    }
+    $type = Get-WinLeanProperty -InputObject $Benefit -Name 'type'
+    $value = Get-WinLeanProperty -InputObject $Benefit -Name 'value'
+    $measurement = Get-WinLeanProperty -InputObject $Benefit -Name 'measurement'
+    if ($script:BenefitTypes -cnotcontains $type) {
+        "'benefit.type' must be one of: $($script:BenefitTypes -join ', ')"
+    }
+    if ($script:BenefitValues -cnotcontains $value) {
+        "'benefit.value' must be one of: $($script:BenefitValues -join ', ')"
+    }
+    if ($script:BenefitMeasurements -cnotcontains $measurement) {
+        "'benefit.measurement' must be one of: $($script:BenefitMeasurements -join ', ')"
+        return
+    }
+    $hasFile = Test-WinLeanProperty -InputObject $Benefit -Name 'measurementFile'
+    if ($measurement -ceq 'Measured') {
+        $file = Get-WinLeanProperty -InputObject $Benefit -Name 'measurementFile'
+        if ($file -isnot [string] -or -not (Test-WinLeanPattern -Text $file -Pattern $script:MeasurementFilePattern -CaseSensitive)) {
+            "'benefit.measurementFile' must name the measurement write-up in Docs/Measurements (for example 'Docs/Measurements/<rule-id>.md')"
+        }
+        return
+    }
+    if ($hasFile) {
+        "'benefit.measurementFile' is only allowed when 'benefit.measurement' is 'Measured'"
+    }
+    if ($type -ceq 'Performance') {
+        "a Performance benefit must be measured ('benefit.measurement' = 'Measured'); describe unmeasured effects with another type"
+    }
+    elseif ($type -ceq 'BackgroundActivity' -and ($value -ceq 'Moderate' -or $value -ceq 'High')) {
+        "a $value BackgroundActivity benefit must be measured; use 'Low' until a measurement is recorded"
+    }
+}
+
+function ConvertTo-WinLeanValidationDate {
+    <#
+    .SYNOPSIS
+        Parses a validation date ('yyyy-MM-dd'). Returns $null when the value is invalid.
+    .NOTES
+        PowerShell 7.0-7.4 converts ISO-looking JSON strings to DateTime; such values are
+        accepted as well.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()] $Value)
+
+    if ($Value -is [datetime]) {
+        return $Value.Date
+    }
+    if ($Value -isnot [string]) {
+        return $null
+    }
+    $parsed = [datetime]::MinValue
+    if ([datetime]::TryParseExact($Value, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$parsed)) {
+        return $parsed
+    }
+    return $null
+}
+
+function Test-WinLeanValidationRecord {
+    <#
+    .SYNOPSIS
+        Validates one validation record: method, build, date and (for VM validation) the
+        validation record file.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowNull()] $Record)
+
+    if (-not (Test-WinLeanObject -Value $Record)) {
+        'a validation record must be an object with method, build and date'
+        return
+    }
+    foreach ($propertyName in @(Get-WinLeanPropertyNames -InputObject $Record)) {
+        if ($script:ValidationProperties -cnotcontains $propertyName) {
+            "unknown property '$propertyName'"
+        }
+    }
+    $method = Get-WinLeanProperty -InputObject $Record -Name 'method'
+    if ($script:ValidationMethods -cnotcontains $method) {
+        "'method' must be one of: $($script:ValidationMethods -join ', ')"
+    }
+    $build = Get-WinLeanProperty -InputObject $Record -Name 'build'
+    if (-not (Test-WinLeanInteger -Value $build) -or [int]$build -lt $script:MinimumWindowsBuild) {
+        "'build' must be the Windows build the rule was validated on ($($script:MinimumWindowsBuild) or later)"
+    }
+    $date = ConvertTo-WinLeanValidationDate -Value (Get-WinLeanProperty -InputObject $Record -Name 'date')
+    if ($null -eq $date) {
+        "'date' must be the validation date as yyyy-MM-dd"
+    }
+    elseif ($date -gt [datetime]::UtcNow.Date.AddDays(1)) {
+        "'date' lies in the future"
+    }
+    $hasFile = Test-WinLeanProperty -InputObject $Record -Name 'file'
+    if ($hasFile -or $method -ceq 'VmApplyRestore') {
+        $file = Get-WinLeanProperty -InputObject $Record -Name 'file'
+        if ($file -isnot [string] -or -not (Test-WinLeanPattern -Text $file -Pattern $script:ValidationFilePattern -CaseSensitive)) {
+            "'file' must name the validation record in Docs/Validation (required for VmApplyRestore)"
+        }
+    }
+    if ((Test-WinLeanProperty -InputObject $Record -Name 'notes') -and -not (Test-WinLeanNonEmptyString -Value (Get-WinLeanProperty -InputObject $Record -Name 'notes'))) {
+        "'notes' must be a non-empty string when present"
     }
 }
 
@@ -825,8 +1029,10 @@ function Test-WinLeanCompatibilityDefinition {
 
 Export-ModuleMember -Function @(
     'Get-WinLeanRuleCategories'
+    'Get-WinLeanRuleVocabulary'
     'Get-WinLeanRiskLevels'
     'Get-WinLeanRiskRank'
+    'ConvertTo-WinLeanValidationDate'
     'New-WinLeanIssue'
     'Test-WinLeanRuleDefinition'
     'Test-WinLeanRuleCatalog'

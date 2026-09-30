@@ -72,6 +72,11 @@ function New-TestRuleDefinition {
     if (-not $Resources) {
         $Resources = @(@{ type = 'RegistryValue'; path = 'HKCU:\Software\WinLeanTest\Rule'; name = 'Value'; valueType = 'DWord'; value = 1 })
     }
+    # The validation record must name the newest validated build (windows.maxValidatedBuild).
+    $validatedBuild = $Windows['maxValidatedBuild']
+    if ($Extra.ContainsKey('windows') -and $Extra['windows'] -is [hashtable] -and $Extra['windows'].ContainsKey('maxValidatedBuild')) {
+        $validatedBuild = $Extra['windows']['maxValidatedBuild']
+    }
     $definition = [ordered]@{
         schemaVersion  = 1
         id             = $Id
@@ -89,7 +94,9 @@ function New-TestRuleDefinition {
         conflicts      = @($Conflicts)
         effects        = @('Changes a test value.')
         sideEffects    = @('None; test only.')
+        benefit        = @{ type = 'Privacy'; value = 'Low'; measurement = 'NotMeasured' }
         references     = @(@{ title = 'Test reference'; url = 'https://example.com/test' })
+        validation     = @(@{ method = 'SourceReview'; build = $validatedBuild; date = '2026-09-28' })
         resources      = @($Resources)
     }
     foreach ($key in $Extra.Keys) {

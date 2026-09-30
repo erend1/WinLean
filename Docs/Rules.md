@@ -12,7 +12,7 @@ gives editors completion and inline errors (add `"$schema": "../../Schemas/rule.
 | `id` | yes | lowercase dotted id starting with the category prefix, e.g. `privacy.advertising-id.disable`; the file is named `<id>.json` |
 | `name`, `description`, `rationale` | yes | what it is, exactly what it changes (including the matching Settings or Group Policy option), and why it is worth doing |
 | `category` | yes | Applications (`apps`), Startup, Services, ScheduledTasks (`tasks`), Privacy, Recommendations, Features, Gaming, Explorer, Search, Networking, Power, Security, Development, ThirdParty (`thirdparty`) |
-| `risk` | yes | `Low` (normally safe), `Medium` (feature-dependent; needs conditions), `High` (servicing, security, broad compatibility; excluded from standard profiles) |
+| `risk` | yes | `Low` (normally safe), `Medium` (feature-dependent; needs a `requirement.*` condition), `High` (servicing, security, broad compatibility; needs a `requirement.*` condition; excluded from standard profiles) |
 | `reversible` | yes | `true` for every declarative resource |
 | `requiresReboot` | yes | `true` exactly when `takesEffect` is `Reboot` |
 | `takesEffect` | yes | `Immediately`, `ExplorerRestart`, `SignOut` or `Reboot`: the latest point at which the change is fully effective |
@@ -22,10 +22,61 @@ gives editors completion and inline errors (add `"$schema": "../../Schemas/rule.
 | `conflicts` | yes | rules that must not be in effect together with this rule |
 | `effects`, `sideEffects` | yes | at least one entry each |
 | `notes` | no | reviewer notes: Windows default, policy definition, caveats |
+| `benefit` | yes | what the rule is good for: `type`, `value`, `measurement` (see [Benefit](#benefit)) |
 | `references` | yes | `https://` sources that document the exact setting (may be `[]` only when `evidence` is present) |
 | `evidence` | no | recorded observations of what a Settings toggle writes (see [Evidence standard](#evidence-standard)) |
-| `resources` | yes | declarative resources (0.1: `RegistryValue`) |
+| `validation` | yes | how, on which build and when the rule was validated (see [Validation records](#validation-records)) |
+| `resources` | yes | declarative resources: `RegistryValue` |
 | `tags` | no | lowercase words |
+
+### Benefit
+
+```json
+"benefit": { "type": "Privacy", "value": "Low", "measurement": "NotMeasured" }
+```
+
+Benefits are qualitative. WinLean has no numeric scores, because a number would suggest a
+precision nobody has measured.
+
+| Field | Values |
+|---|---|
+| `type` | `Performance` (measurable speed or responsiveness), `BackgroundActivity` (fewer processes, services, tasks or network activity), `Privacy` (less data collected or shared), `Security` (reduced exposure without disabling protections), `Storage` (disk space), `Usability` (a more convenient or transparent interface), `Distraction` (fewer tips, suggestions and promotions) |
+| `value` | `Cosmetic`, `Low`, `Moderate`, `High`: the expected size of the benefit |
+| `measurement` | `Measured`: a recorded measurement shows the effect (`measurementFile` in `Docs/Measurements/` is then required). `NotMeasured`: the benefit follows from the documented behaviour of the setting |
+
+Validation enforces that claims match their support:
+
+- `Performance` requires `Measured`: WinLean makes no performance claims without a
+  measurement. An unmeasured change that probably reduces load is `BackgroundActivity`.
+- `BackgroundActivity` with value `Moderate` or `High` requires `Measured`.
+- Privacy, security, distraction and usability benefits are not relabelled as performance.
+
+The plan, `-ListRules` and the Markdown report show the benefit of each rule and summarize
+the rules to apply (or applied) per benefit type.
+
+### Validation records
+
+```json
+"validation": [
+  { "method": "VmApplyRestore", "build": 26200, "date": "2026-10-02", "file": "Docs/Validation/2026-10-02-26200.md" },
+  { "method": "SourceReview", "build": 26200, "date": "2026-09-28" }
+]
+```
+
+Together with `references` and `evidence` (where a setting comes from), validation records
+answer how the rule was validated, on which Windows build and when:
+
+| Method | Meaning |
+|---|---|
+| `SourceReview` | the setting was checked against its references (or evidence) on that build: policy definitions, documented values, the value read on a real system |
+| `VmApplyRestore` | the rule was applied, verified and restored with WinLean in a disposable VM following [VmValidation.md](VmValidation.md); `file` names the validation record in `Docs/Validation/` |
+
+- `windows.maxValidatedBuild` must equal the newest build in `validation`, so the two cannot
+  drift apart; every record must lie within `minBuild`..`maxBuild`.
+- `date` is `yyyy-MM-dd` and may not lie in the future. The newest date is shown as "last
+  validated".
+- The plan notes Medium and High risk rules that have no `VmApplyRestore` record yet, and the
+  repository tests refuse such rules in shipped profiles.
 
 ### Conditions
 
@@ -61,9 +112,10 @@ gives editors completion and inline errors (add `"$schema": "../../Schemas/rule.
 ### Validation issue codes
 
 RuleSchema, UnknownProperty, SchemaVersion, RuleId, RuleIdPrefix, Category, RequiredField,
-Risk, TakesEffect, Windows, Conditions, References, Evidence, Documentation, Tags, Resources,
-Reversible, Location, RuleParse; catalog: DuplicateRuleId, UnknownDependency, UnknownConflict,
-ContradictoryReferences, DependencyCycle, UndeclaredConflict (warning).
+Risk, TakesEffect, Windows, Conditions, References, Evidence, Benefit, Validation,
+Documentation, Tags, Resources, Reversible, Location, RuleParse; catalog: DuplicateRuleId,
+UnknownDependency, UnknownConflict, ContradictoryReferences, DependencyCycle,
+UndeclaredConflict (warning).
 
 ## Evidence standard
 
@@ -105,25 +157,30 @@ validation:
 Observations never come from the primary workstation, and never from forum posts or other
 scripts.
 
-## Catalog (milestone 0.1)
+## Catalog
 
 All rules are Low risk and reversible. `maxValidatedBuild` is 26200 (Windows 11 25H2): on
 that build the policy definitions (ADMX/ADML in `C:\Windows\PolicyDefinitions`) or registry
 locations were checked against Microsoft's documentation, and the per-user values were read
-(never written) on a real system. Applying and restoring the real settings is covered by the
-destructive test suite, which must be run in a VM before a rule is validated for a new build.
+(never written) on a real system - recorded as a `SourceReview` validation dated 2026-09-28.
+No rule has a `VmApplyRestore` record yet: applying and restoring the real settings is
+covered by the destructive test suite, which must be run in a VM (see
+[VmValidation.md](VmValidation.md)) before such a record is added. Milestone 0.2A added no
+rules.
 
-| Rule | Setting | Scope | Source |
-|---|---|---|---|
-| `privacy.advertising-id.disable` | `HKLM\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo\DisabledByGroupPolicy = 1` (policy "Turn off the advertising ID") | Machine, needs Administrator | UserProfiles.admx; Policy CSP Privacy/DisableAdvertisingId; privacy guidance 18.1 |
-| `privacy.tailored-experiences.disable` | `HKCU\Software\Policies\Microsoft\Windows\CloudContent\DisableTailoredExperiencesWithDiagnosticData = 1` (user policy "Do not use diagnostic data for tailored experiences") | CurrentUser; usually needs an elevated session of the same user (HKCU\Software\Policies ACL) | CloudContent.admx; Policy CSP Experience/AllowTailoredExperiencesWithDiagnosticData; privacy guidance 18.16 |
-| `privacy.language-list-web-access.disable` | `HKCU\Control Panel\International\User Profile\HttpAcceptLanguageOptOut = 1` | CurrentUser | privacy guidance 18.1 |
-| `privacy.app-launch-tracking.disable` (Lean) | `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Start_TrackProgs = 0` | CurrentUser | privacy guidance 18.1 |
-| `recommendations.settings-online-tips.disable` | `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\AllowOnlineTips = 0` (policy "Allow Online Tips", unchecked) | Machine, needs Administrator | ControlPanel.admx; Policy CSP Settings/AllowOnlineTips |
-| `recommendations.windows-tips.disable` | `HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent\DisableSoftLanding = 1` | Machine; Enterprise/Education editions only | CloudContent.admx ("only applies to Enterprise and Education SKUs"); Policy CSP Experience/AllowWindowsTips |
-| `recommendations.consumer-experiences.disable` | `HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent\DisableWindowsConsumerFeatures = 1` | Machine; Enterprise/Education editions only | CloudContent.admx; Policy CSP Experience/AllowWindowsConsumerFeatures |
-| `explorer.file-extensions.show` | `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\HideFileExt = 0` | CurrentUser | Microsoft winget-dsc, Microsoft.Windows.Developer WindowsExplorer resource |
-| `explorer.hidden-files.show` (optional) | `...\Explorer\Advanced\Hidden = 1` (ShowSuperHidden untouched) | CurrentUser | Microsoft winget-dsc |
+| Rule | Setting | Scope | Benefit | Source |
+|---|---|---|---|---|
+| `privacy.advertising-id.disable` | `HKLM\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo\DisabledByGroupPolicy = 1` (policy "Turn off the advertising ID") | Machine, needs Administrator | Privacy, Moderate | UserProfiles.admx; Policy CSP Privacy/DisableAdvertisingId; privacy guidance 18.1 |
+| `privacy.tailored-experiences.disable` | `HKCU\Software\Policies\Microsoft\Windows\CloudContent\DisableTailoredExperiencesWithDiagnosticData = 1` (user policy "Do not use diagnostic data for tailored experiences") | CurrentUser; usually needs an elevated session of the same user (HKCU\Software\Policies ACL) | Privacy, Low | CloudContent.admx; Policy CSP Experience/AllowTailoredExperiencesWithDiagnosticData; privacy guidance 18.16 |
+| `privacy.language-list-web-access.disable` | `HKCU\Control Panel\International\User Profile\HttpAcceptLanguageOptOut = 1` | CurrentUser | Privacy, Low | privacy guidance 18.1 |
+| `privacy.app-launch-tracking.disable` (Lean) | `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Start_TrackProgs = 0` | CurrentUser | Privacy, Low | privacy guidance 18.1 |
+| `recommendations.settings-online-tips.disable` | `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\AllowOnlineTips = 0` (policy "Allow Online Tips", unchecked) | Machine, needs Administrator | Distraction, Low | ControlPanel.admx; Policy CSP Settings/AllowOnlineTips |
+| `recommendations.windows-tips.disable` | `HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent\DisableSoftLanding = 1` | Machine; Enterprise/Education editions only | Distraction, Low | CloudContent.admx ("only applies to Enterprise and Education SKUs"); Policy CSP Experience/AllowWindowsTips |
+| `recommendations.consumer-experiences.disable` | `HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent\DisableWindowsConsumerFeatures = 1` | Machine; Enterprise/Education editions only | Distraction, Moderate | CloudContent.admx; Policy CSP Experience/AllowWindowsConsumerFeatures |
+| `explorer.file-extensions.show` | `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\HideFileExt = 0` | CurrentUser | Security, Low (disguised file names such as `invoice.pdf.exe` become visible) | Microsoft winget-dsc, Microsoft.Windows.Developer WindowsExplorer resource |
+| `explorer.hidden-files.show` (optional) | `...\Explorer\Advanced\Hidden = 1` (ShowSuperHidden untouched) | CurrentUser | Usability, Cosmetic | Microsoft winget-dsc |
+
+None of the benefits is measured; none is a performance claim.
 
 "Privacy guidance" is Microsoft Learn's *Manage connections from Windows operating system
 components to Microsoft services*. ADMX files are in `C:\Windows\PolicyDefinitions`; their
@@ -149,8 +206,20 @@ capture in a disposable VM confirms the values.
 
 ## Acceptance criteria (for Safe and Lean)
 
-A rule enters Safe or Lean only if its purpose and the controlled feature are understood,
-its compatibility impact is documented, apply/undo/verify are implemented (declarative
-resources provide all three), it is idempotent, fails safely, has been tested (unit,
-integration and a VM apply/restore), and its value is plausible. See the rule development
-checklist in the README.
+Safe stays very conservative: only Low risk rules without compatibility conditions, whose
+effect is a documented setting that every user of the profile can live with. Safe is not
+expanded to make it look more effective.
+
+A rule enters Lean only if all of the following hold:
+
+1. its benefit is understood and recorded in `benefit` (no unmeasured performance claims);
+2. its compatibility impact is explicit: Medium and High risk rules carry a
+   `requirement.*` condition, so they apply only after the user declared the feature
+   unnecessary;
+3. its source satisfies the evidence standard above;
+4. its provider is implemented and tested (unit and integration tests);
+5. it has been applied, verified and restored successfully in a disposable VM, recorded as a
+   `VmApplyRestore` validation (enforced by the repository tests for Medium and High risk
+   rules in shipped profiles).
+
+Minimal may remain incomplete. See the rule development checklist in the README.

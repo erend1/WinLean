@@ -30,11 +30,19 @@
     "The policy explanation states that it only applies to Enterprise and Education SKUs, and the Policy CSP (Experience/AllowWindowsTips) lists it as not applicable to Pro. WinLean therefore marks the rule Unsupported on other editions instead of writing a value that has no effect.",
     "Requires Administrator rights (the value is stored under HKLM)."
   ],
+  "benefit": {
+    "type": "Distraction",
+    "value": "Low",
+    "measurement": "NotMeasured"
+  },
   "references": [
     {
       "title": "Microsoft Learn - Policy CSP Experience: AllowWindowsTips (group policy mapping: CloudContent.admx, DisableSoftLanding)",
       "url": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-experience#allowwindowstips"
     }
+  ],
+  "validation": [
+    { "method": "SourceReview", "build": 26200, "date": "2026-09-28" }
   ],
   "resources": [
     {

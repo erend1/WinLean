@@ -29,6 +29,11 @@
     "The policy does not control Cortana's tailored experiences, which have separate policies.",
     "HKCU\\Software\\Policies is normally writable by administrators only, so this per-user rule usually needs an elevated PowerShell run by the same user. WinLean checks the real key permissions instead of assuming."
   ],
+  "benefit": {
+    "type": "Privacy",
+    "value": "Low",
+    "measurement": "NotMeasured"
+  },
   "references": [
     {
       "title": "Microsoft Learn - Policy CSP Experience: AllowTailoredExperiencesWithDiagnosticData (group policy mapping: CloudContent.admx)",
@@ -38,6 +43,9 @@
       "title": "Microsoft Learn - Manage connections from Windows operating system components to Microsoft services, 18.16 Feedback & diagnostics",
       "url": "https://learn.microsoft.com/en-us/windows/privacy/manage-connections-from-windows-operating-system-components-to-microsoft-services"
     }
+  ],
+  "validation": [
+    { "method": "SourceReview", "build": 26200, "date": "2026-09-28" }
   ],
   "resources": [
     {

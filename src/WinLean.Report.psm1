@@ -53,6 +53,43 @@ function Format-WinLeanLabel {
     return (' ' * $Indent) + $paddedLabel + $text
 }
 
+function Format-WinLeanBenefit {
+    <#
+    .SYNOPSIS
+        "Privacy (Low, not measured)" for a benefit object; 'unspecified' when missing
+        (plans and backups written by WinLean 0.1 have no benefit information).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowNull()] $Benefit)
+
+    $type = [string](Get-WinLeanProperty -InputObject $Benefit -Name 'type' -Default '')
+    if (-not $type) {
+        return 'unspecified'
+    }
+    $value = [string](Get-WinLeanProperty -InputObject $Benefit -Name 'value' -Default '')
+    $measured = if ([string](Get-WinLeanProperty -InputObject $Benefit -Name 'measurement' -Default '') -ceq 'Measured') { 'measured' } else { 'not measured' }
+    return '{0} ({1}, {2})' -f $type, $value, $measured
+}
+
+function Format-WinLeanBenefitCounts {
+    <#
+    .SYNOPSIS
+        "Privacy 2, Distraction 1" from items that carry a benefit, in first-seen order.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Items)
+
+    $counts = [ordered]@{}
+    foreach ($item in $Items) {
+        $type = [string](Get-WinLeanProperty -InputObject (Get-WinLeanProperty -InputObject $item -Name 'benefit') -Name 'type' -Default 'unspecified')
+        if (-not $type) { $type = 'unspecified' }
+        if ($counts.Contains($type)) { $counts[$type] = $counts[$type] + 1 } else { $counts[$type] = 1 }
+    }
+    return (@($counts.Keys | ForEach-Object { '{0} {1}' -f $_, $counts[$_] }) -join ', ')
+}
+
 function Format-WinLeanSectionValue {
     <#
     .SYNOPSIS
@@ -224,6 +261,10 @@ function Format-WinLeanPlanText {
     ''
     'Rules: {0}   Apply: {1}   Already satisfied: {2}   Requires confirmation: {3}   Blocked: {4}   Skipped: {5}   Unsupported: {6}' -f `
         $Plan.summary.total, $counts.Applicable, $counts.AlreadySatisfied, $counts.RequiresConfirmation, $counts.Blocked, $counts.Skipped, $counts.Unsupported
+    $applicableItems = @($Plan.items | Where-Object { $_.status -eq 'Applicable' })
+    if ($applicableItems.Count -gt 0) {
+        'Benefit of the rules to apply: ' + (Format-WinLeanBenefitCounts -Items $applicableItems) + ' (qualitative; see each rule)'
+    }
 
     foreach ($status in $script:PlanSections.Keys) {
         $items = @($Plan.items | Where-Object { $_.status -eq $status })
@@ -237,6 +278,8 @@ function Format-WinLeanPlanText {
             if ($status -eq 'Applicable') {
                 '  Risk: {0}   Reversible: {1}   Reboot: {2}   Takes effect: {3}   Scope: {4} ({5})' -f `
                     $item.risk, (Format-WinLeanYesNo -Value $item.reversible), (Format-WinLeanYesNo -Value $item.requiresReboot), $item.takesEffect, $item.scope, $item.mechanism
+                $validated = [string](Get-WinLeanProperty -InputObject $item -Name 'lastValidated' -Default '')
+                '  Benefit: {0}   Last validated: {1}' -f (Format-WinLeanBenefit -Benefit (Get-WinLeanProperty -InputObject $item -Name 'benefit')), $(if ($validated) { $validated } else { 'unknown' })
                 foreach ($resource in @($item.resources | Where-Object { -not $_.inDesiredState })) {
                     '  {0}: {1} -> {2}' -f $resource.target, $resource.currentText, $resource.desiredText
                 }
@@ -287,15 +330,21 @@ function Format-WinLeanRuleListText {
     'WINLEAN RULES'
     ''
     $idWidth = [Math]::Max(10, (@($Rules | ForEach-Object { $_.id.Length }) + 0 | Measure-Object -Maximum).Maximum + 2)
-    ('{0}{1}{2}{3}{4}' -f 'ID'.PadRight($idWidth), 'RISK'.PadRight(8), 'SCOPE'.PadRight(13), 'KIND'.PadRight(12), 'PROFILES')
+    ('{0}{1}{2}{3}{4}{5}' -f 'ID'.PadRight($idWidth), 'RISK'.PadRight(8), 'SCOPE'.PadRight(13), 'KIND'.PadRight(12), 'BENEFIT'.PadRight(22), 'PROFILES')
     $script:Rule
     foreach ($rule in $Rules) {
         $profiles = ''
         if ($Membership -and (Test-WinLeanDictionaryKey -Dictionary $Membership -Key $rule.id)) {
             $profiles = (@($Membership[$rule.id]) -join ', ')
         }
-        ('{0}{1}{2}{3}{4}' -f $rule.id.PadRight($idWidth), $rule.risk.PadRight(8), $rule.scope.PadRight(13), $rule.mechanism.PadRight(12), $(if ($profiles) { $profiles } else { '-' }))
+        $benefit = '{0}/{1}' -f $rule.benefit.type, $rule.benefit.value
+        ('{0}{1}{2}{3}{4}{5}' -f $rule.id.PadRight($idWidth), $rule.risk.PadRight(8), $rule.scope.PadRight(13), $rule.mechanism.PadRight(12), ($benefit + ' ').PadRight(22), $(if ($profiles) { $profiles } else { '-' }))
         '  ' + $rule.name
+        $latest = @($rule.validation) | Select-Object -First 1
+        if ($null -ne $latest) {
+            $method = if ($latest.method -ceq 'VmApplyRestore') { 'VM apply/restore' } else { 'source review' }
+            '  Validated: {0} on build {1} ({2}){3}' -f $method, $latest.build, $latest.date, $(if ($rule.benefit.measurement -ceq 'Measured') { '; benefit measured' } else { '' })
+        }
     }
     ''
     "$($Rules.Count) rule(s). Details: Rules\<Category>\<rule-id>.json"
@@ -674,6 +723,11 @@ function ConvertTo-WinLeanMarkdownReport {
     # (and $null.Count throws in strict mode).
     $results = @(if ($execution) { $execution.results })
     $applied = @($results | Where-Object { $_.status -eq 'Succeeded' })
+    # Benefit information comes from the plan (absent in plans written by WinLean 0.1).
+    $planItems = New-WinLeanDictionary
+    foreach ($item in @(if ($plan) { $plan.items })) {
+        $planItems[[string]$item.ruleId] = $item
+    }
     & $add
     & $add '## Applied rules'
     & $add
@@ -681,15 +735,19 @@ function ConvertTo-WinLeanMarkdownReport {
         & $add 'No rules were applied.'
     }
     else {
-        & $add '| Rule | Name | Result |'
-        & $add '|---|---|---|'
+        $appliedItems = @(foreach ($result in $applied) { if ($planItems.ContainsKey([string]$result.ruleId)) { $planItems[[string]$result.ruleId] } })
+        & $add ('Benefit of the applied rules: {0}. Benefits are qualitative; only benefits marked "measured" are backed by a recorded measurement.' -f (Format-WinLeanBenefitCounts -Items $appliedItems))
+        & $add
+        & $add '| Rule | Name | Benefit | Result |'
+        & $add '|---|---|---|---|'
         foreach ($result in $applied) {
             $changes = @(for ($index = 0; $index -lt @($result.before).Count; $index++) {
                     $beforeText = @($result.before)[$index].text
                     $afterText = if ($index -lt @($result.after).Count) { @($result.after)[$index].text } else { '?' }
                     '{0}: {1} -> {2}' -f @($result.before)[$index].target, $beforeText, $afterText
                 })
-            & $add ('| `{0}` | {1} | Applied and verified. {2} |' -f $result.ruleId, (& $cell $result.name), (& $cell ($changes -join '; ')))
+            $benefit = if ($planItems.ContainsKey([string]$result.ruleId)) { Format-WinLeanBenefit -Benefit (Get-WinLeanProperty -InputObject $planItems[[string]$result.ruleId] -Name 'benefit') } else { 'unspecified' }
+            & $add ('| `{0}` | {1} | {2} | Applied and verified. {3} |' -f $result.ruleId, (& $cell $result.name), (& $cell $benefit), (& $cell ($changes -join '; ')))
         }
     }
 
@@ -775,6 +833,7 @@ Export-ModuleMember -Function @(
     'Format-WinLeanIssueText'
     'Format-WinLeanCompatibilitySource'
     'Format-WinLeanYesNo'
+    'Format-WinLeanBenefit'
     'Format-WinLeanExecutionText'
     'Format-WinLeanRestorePlanText'
     'Format-WinLeanRestoreResultText'

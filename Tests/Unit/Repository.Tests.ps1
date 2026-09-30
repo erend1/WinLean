@@ -43,12 +43,26 @@ Describe 'Shipped rules' {
         }
     }
 
-    It 'reference evidence files that exist' {
+    It 'reference evidence, measurement and validation files that exist' {
         foreach ($file in Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'Rules') -Filter '*.json' -Recurse) {
             $definition = Get-Content -Raw -LiteralPath $file.FullName | ConvertFrom-Json
-            foreach ($observation in @(Get-WinLeanArrayProperty -InputObject $definition -Name 'evidence')) {
-                Test-Path -LiteralPath (Join-Path $script:RepoRoot $observation.file) | Should -BeTrue -Because "$($file.Name) references $($observation.file)"
+            $files = @(
+                @(Get-WinLeanArrayProperty -InputObject $definition -Name 'evidence') | ForEach-Object { $_.file }
+                @(Get-WinLeanArrayProperty -InputObject $definition -Name 'validation') | ForEach-Object { Get-WinLeanProperty -InputObject $_ -Name 'file' }
+                Get-WinLeanProperty -InputObject $definition.benefit -Name 'measurementFile'
+            ) | Where-Object { $_ }
+            foreach ($relative in $files) {
+                Test-Path -LiteralPath (Join-Path $script:RepoRoot $relative) | Should -BeTrue -Because "$($file.Name) references $relative"
             }
+        }
+    }
+
+    It 'declare their benefit and when they were last validated' {
+        foreach ($id in $script:Catalog.ruleIds) {
+            $rule = $script:Catalog.rules[$id]
+            $rule.benefit.type | Should -Not -BeNullOrEmpty -Because $id
+            $rule.lastValidated | Should -Match '^\d{4}-\d{2}-\d{2}$' -Because $id
+            @($rule.validation)[0].build | Should -Be $rule.windows.maxValidatedBuild -Because $id
         }
     }
 
@@ -84,6 +98,29 @@ Describe 'Shipped profiles' {
         $custom.ruleIds | Should -Contain 'explorer.hidden-files.show'
         $custom.excluded | Should -Contain 'privacy.language-list-web-access.disable'
     }
+
+    It 'keep Safe conservative: low risk rules without compatibility conditions' {
+        foreach ($id in (Import-WinLeanProfile -Name 'Safe' -ProfileDirectory $script:ProfileDirectory).ruleIds) {
+            $rule = $script:Catalog.rules[$id]
+            $rule.risk | Should -Be 'Low' -Because $id
+            @($rule.conditions).Count | Should -Be 0 -Because "$id should not depend on compatibility decisions"
+        }
+    }
+
+    It 'include rules of risk Medium or higher only after a VM apply/restore validation' {
+        # Lean admission criteria (Docs/Rules.md): an understood benefit, an explicit
+        # compatibility condition, a satisfied source standard, a tested provider and a
+        # successful apply/verify/restore in a disposable VM.
+        foreach ($file in Get-ChildItem -LiteralPath $script:ProfileDirectory -Filter '*.json') {
+            $profile = Import-WinLeanProfile -Name $file.FullName -ProfileDirectory $script:ProfileDirectory
+            foreach ($id in $profile.ruleIds) {
+                $rule = $script:Catalog.rules[$id]
+                if ((Get-WinLeanRiskRank -Risk $rule.risk) -ge 1) {
+                    $rule.vmValidated | Should -BeTrue -Because "$id ($($rule.risk)) is part of profile $($profile.name)"
+                }
+            }
+        }
+    }
 }
 
 Describe 'Schemas and configuration' {
@@ -92,6 +129,19 @@ Describe 'Schemas and configuration' {
         @($script:RuleSchema.properties.category.enum) | Should -Be $categories
         @($script:RuleSchema.properties.risk.enum) | Should -Be @(Get-WinLeanRiskLevels)
         @($script:RuleSchema.properties.takesEffect.enum) | Should -Be @('Immediately', 'ExplorerRestart', 'SignOut', 'Reboot')
+    }
+
+    It 'list the same benefit, evidence and validation values as the validator' {
+        $vocabulary = Get-WinLeanRuleVocabulary
+        $properties = $script:RuleSchema.properties
+        @($properties.takesEffect.enum) | Should -Be $vocabulary.takesEffect
+        @($properties.benefit.properties.type.enum) | Should -Be $vocabulary.benefitTypes
+        @($properties.benefit.properties.value.enum) | Should -Be $vocabulary.benefitValues
+        @($properties.benefit.properties.measurement.enum) | Should -Be $vocabulary.benefitMeasurements
+        @($properties.evidence.items.properties.method.enum) | Should -Be $vocabulary.evidenceMethods
+        @($properties.validation.items.properties.method.enum) | Should -Be $vocabulary.validationMethods
+        @($script:RuleSchema.required) | Should -Contain 'benefit'
+        @($script:RuleSchema.required) | Should -Contain 'validation'
     }
 
     It 'have a compatibility example that declares every known requirement' {

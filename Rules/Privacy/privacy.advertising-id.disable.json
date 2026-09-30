@@ -30,6 +30,11 @@
     "Microsoft's privacy guidance additionally mentions HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo\\Enabled = 0. WinLean does not set it: its semantics are not documented, while the policy alone is documented to turn the ID off.",
     "Requires Administrator rights (the value is stored under HKLM)."
   ],
+  "benefit": {
+    "type": "Privacy",
+    "value": "Moderate",
+    "measurement": "NotMeasured"
+  },
   "references": [
     {
       "title": "Microsoft Learn - Policy CSP Privacy: DisableAdvertisingId (group policy mapping: UserProfiles.admx, DisabledByGroupPolicy)",
@@ -39,6 +44,9 @@
       "title": "Microsoft Learn - Manage connections from Windows operating system components to Microsoft services, 18.1 General",
       "url": "https://learn.microsoft.com/en-us/windows/privacy/manage-connections-from-windows-operating-system-components-to-microsoft-services"
     }
+  ],
+  "validation": [
+    { "method": "SourceReview", "build": 26200, "date": "2026-09-28" }
   ],
   "resources": [
     {

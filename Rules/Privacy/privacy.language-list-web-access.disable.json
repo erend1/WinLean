@@ -27,11 +27,19 @@
     "Windows default: the value does not exist and the setting is on.",
     "Per-user preference; no Administrator rights are needed and the user can change it back in Settings at any time."
   ],
+  "benefit": {
+    "type": "Privacy",
+    "value": "Low",
+    "measurement": "NotMeasured"
+  },
   "references": [
     {
       "title": "Microsoft Learn - Manage connections from Windows operating system components to Microsoft services, 18.1 General (HttpAcceptLanguageOptOut)",
       "url": "https://learn.microsoft.com/en-us/windows/privacy/manage-connections-from-windows-operating-system-components-to-microsoft-services"
     }
+  ],
+  "validation": [
+    { "method": "SourceReview", "build": 26200, "date": "2026-09-28" }
   ],
   "resources": [
     {

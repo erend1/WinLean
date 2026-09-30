@@ -28,11 +28,19 @@
     "Policy definition ControlPanel.admx, policy AllowOnlineTips (class Machine): boolean element 'AllowOnlineTips', true = 1, false = 0. Policy CSP Settings/AllowOnlineTips documents 0 as 'Not allowed'.",
     "Requires Administrator rights (the value is stored under HKLM)."
   ],
+  "benefit": {
+    "type": "Distraction",
+    "value": "Low",
+    "measurement": "NotMeasured"
+  },
   "references": [
     {
       "title": "Microsoft Learn - Policy CSP Settings: AllowOnlineTips (group policy mapping: ControlPanel.admx)",
       "url": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-settings#allowonlinetips"
     }
+  ],
+  "validation": [
+    { "method": "SourceReview", "build": 26200, "date": "2026-09-28" }
   ],
   "resources": [
     {
