@@ -232,11 +232,14 @@ accepted:
 
    A valid observation shows the value(s) the rule writes when the toggle is switched to the
    rule's state, and the previous value(s) coming back when it is switched back. Methods:
-   `RegistryDiff` (`Tools\Capture-WinLeanEvidence.ps1`, read-only snapshots before and
-   after each change) or `ProcessMonitor` (Sysinternals Process Monitor trace of
-   `SystemSettings.exe`). The write-up in `Docs\Evidence\` records the setting, the Windows
-   build, the procedure, the observed changes and the reviewer's conclusion
-   ([template and procedure](Evidence/README.md)).
+   `RegistryDiff` (`Tools\Capture-WinLeanEvidence.ps1`: read-only snapshots of a baseline
+   without any action, then after every switch and switch back) or `ProcessMonitor`
+   (Sysinternals Process Monitor trace of `SystemSettings.exe`). Only *attributable*
+   changes count: changed on every switch, reversed exactly on every switch back, identical
+   in every cycle and absent from the baseline - incidental registry churn is never proof.
+   The write-up in `Docs\Evidence\` records the setting, the Windows edition, build and UBR,
+   the environment, every phase, the attribution and the reviewer's conclusion
+   ([procedure](Evidence/README.md)).
 
 Rules whose only source is an observation are held to stricter limits, enforced by
 validation:
