@@ -8,9 +8,11 @@
 /Logs/*
 !/Logs/.gitkeep
 
-# Local, machine-specific compatibility requirements. Copy
-# Config/Compatibility.example.json to create it.
+# Local, machine-specific compatibility requirements. Create them with
+# .\WinLean.ps1 -Configure (or copy Config/Compatibility.example.json); -Configure
+# keeps the version it replaced as Compatibility.previous.json.
 /Config/Compatibility.json
+/Config/Compatibility.previous.json
 
 # Repository-local tooling (for example Pester, saved by
 # Tests/Invoke-WinLeanTests.ps1 -Bootstrap) and test output.

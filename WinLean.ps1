@@ -11,6 +11,16 @@
 .PARAMETER Analyze
     Collects a read-only inventory of the system and prints a summary.
 
+.PARAMETER Configure
+    Interactive questionnaire that creates or updates the compatibility configuration
+    (Config\Compatibility.json, or -CompatibilityPath). Every known requirement is asked
+    with the current answer and read-only detection hints; Enter keeps an answer. The
+    changes are summarized and saved only after confirmation (atomically, keeping the
+    previous version as Compatibility.previous.json). -WhatIf shows the summary only.
+
+.PARAMETER SkipDetection
+    With -Configure: do not collect the inventory used for detection hints.
+
 .PARAMETER ProfileName
     The profile to evaluate (alias -Profile): Safe, Lean, Minimal, a custom profile name
     from the Profiles folder, or a path to a profile .json file. Without -Apply this
@@ -74,6 +84,9 @@
     .\WinLean.ps1 -Analyze
 
 .EXAMPLE
+    .\WinLean.ps1 -Configure
+
+.EXAMPLE
     .\WinLean.ps1 -Profile Safe -WhatIf
 
 .EXAMPLE
@@ -94,6 +107,12 @@
 param(
     [Parameter(Mandatory, ParameterSetName = 'Analyze')]
     [switch] $Analyze,
+
+    [Parameter(Mandatory, ParameterSetName = 'Configure')]
+    [switch] $Configure,
+
+    [Parameter(ParameterSetName = 'Configure')]
+    [switch] $SkipDetection,
 
     [Parameter(Mandatory, ParameterSetName = 'Plan')]
     [Parameter(Mandatory, ParameterSetName = 'Apply')]
@@ -167,6 +186,7 @@ function Show-WinLeanUsage {
 WinLean - Windows, minus everything you do not intentionally use.
 
   .\WinLean.ps1 -Analyze                     Read-only inventory and summary
+  .\WinLean.ps1 -Configure                   Declare what this PC needs (compatibility questionnaire)
   .\WinLean.ps1 -Profile Safe -WhatIf        Dry run: show what the profile would change
   .\WinLean.ps1 -Profile Safe -Apply         Show the plan, confirm, back up, apply, verify
   .\WinLean.ps1 -Restore Latest              Restore the newest unrestored backup
@@ -225,6 +245,34 @@ try {
             $result = Invoke-WinLeanAnalyze -Session $session -ExcludeSection $exclude
             Write-WinLeanConsole -Lines @(Format-WinLeanAnalysisText -Analysis $result -BasePath $session.paths.install)
             Write-WinLeanLog -Logger $logger -Message "Inventory saved to $($result.inventoryPath)"
+        }
+
+        'Configure' {
+            $configuration = Get-WinLeanConfiguration -Session $session -SkipDetection:$SkipDetection
+            Write-WinLeanConsole -Lines @(Format-WinLeanConfigurationIntroText -Configuration $configuration -BasePath $session.paths.install)
+            $answers = Invoke-WinLeanConfigurationQuestionnaire -Configuration $configuration `
+                -ReadAnswer { param([string] $Prompt) Read-Host -Prompt $Prompt } `
+                -WriteLine { param([string] $Line) Write-WinLeanConsole -Lines @($Line) }
+            Write-WinLeanConsole -Lines @(Format-WinLeanConfigurationChangesText -Result $answers)
+            $result = $answers
+            $changeCount = @($answers.changes).Count
+            if ($changeCount -eq 0) {
+                Write-WinLeanLog -Logger $logger -Message 'Nothing to save: the compatibility configuration was not changed.'
+                break
+            }
+            if ($WhatIfPreference) {
+                Write-WinLeanLog -Logger $logger -Message 'Dry run (-WhatIf): the compatibility configuration was not written.'
+                break
+            }
+            if (-not $PSCmdlet.ShouldProcess($configuration.path, "Save $changeCount change(s) to the compatibility configuration")) {
+                Write-WinLeanLog -Logger $logger -Message 'Cancelled: the compatibility configuration was not written.'
+                $exitCode = $ExitCancelled
+                break
+            }
+            $saved = Save-WinLeanConfiguration -Session $session -Configuration $configuration -Answers $answers.answers
+            if ($saved.previousPath) {
+                Write-WinLeanLog -Logger $logger -Message "Previous version kept as $($saved.previousPath)"
+            }
         }
 
         'Plan' {

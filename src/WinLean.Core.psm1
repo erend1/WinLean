@@ -244,6 +244,106 @@ function Invoke-WinLeanAnalyze {
 }
 
 # ---------------------------------------------------------------------------
+# Compatibility configuration (-Configure)
+# ---------------------------------------------------------------------------
+
+function Get-WinLeanConfiguration {
+    <#
+    .SYNOPSIS
+        Reads the compatibility configuration for editing: current answers, preserved
+        unknown entries, one question per known requirement and detection hints. Read-only.
+    .PARAMETER SkipDetection
+        Do not collect the (read-only) inventory used for detection hints.
+    .NOTES
+        A configuration file with errors is refused (InvalidDataException) so that
+        nothing in it is lost.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [PSTypeName('WinLean.Session')] $Session,
+        [switch] $SkipDetection
+    )
+
+    $definitions = @(Get-WinLeanRequirementDefinitions -SchemaPath $Session.paths.compatibilitySchema)
+    $keys = [string[]]@($definitions | ForEach-Object { $_.key })
+    $document = Read-WinLeanCompatibilityDocument -Path $Session.paths.compatibility -KnownRequirementKeys $keys
+    foreach ($warning in @($document.warnings)) {
+        Write-WinLeanLog -Logger $Session.logger -Level WARN -Message "$($warning.source): $($warning.message) It is kept unchanged when the configuration is saved."
+    }
+
+    $capabilities = New-WinLeanDictionary
+    if (-not $SkipDetection) {
+        Write-WinLeanLog -Logger $Session.logger -Message 'Detecting hardware and software for hints (read-only; hints never change an answer)'
+        $inventory = Invoke-WinLeanInventoryCollection -Session $Session -Section @('hardware', 'appxPackages', 'win32Applications', 'optionalFeatures')
+        $capabilities = Get-WinLeanCapabilities -Inventory $inventory
+    }
+
+    return [pscustomobject]@{
+        PSTypeName      = 'WinLean.Configuration'
+        path            = $document.path
+        exists          = $document.exists
+        schemaReference = $document.schemaReference
+        description     = $document.description
+        requirements    = $document.requirements
+        unknown         = $document.unknown
+        knownKeys       = $keys
+        questions       = @(Get-WinLeanConfigurationQuestions -Definitions $definitions -Capabilities $capabilities)
+        capabilities    = $capabilities
+    }
+}
+
+function Invoke-WinLeanConfigurationQuestionnaire {
+    <#
+    .SYNOPSIS
+        Asks the configuration questions and returns the new answers and the changes.
+        Nothing is written.
+    .PARAMETER ReadAnswer
+        Script block that receives a prompt and returns the answer ($null = end of input).
+    .PARAMETER WriteLine
+        Script block that shows one line of text.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [PSTypeName('WinLean.Configuration')] $Configuration,
+        [Parameter(Mandatory)] [scriptblock] $ReadAnswer,
+        [Parameter(Mandatory)] [scriptblock] $WriteLine
+    )
+
+    $result = Invoke-WinLeanRequirementQuestionnaire -Questions $Configuration.questions -Current $Configuration.requirements -ReadAnswer $ReadAnswer -WriteLine $WriteLine
+    return [pscustomobject]@{
+        PSTypeName = 'WinLean.ConfigurationAnswers'
+        answers    = $result.answers
+        asked      = $result.asked
+        stopped    = $result.stopped
+        changes    = @(Get-WinLeanRequirementChanges -Before $Configuration.requirements -After $result.answers -Keys $Configuration.knownKeys)
+    }
+}
+
+function Save-WinLeanConfiguration {
+    <#
+    .SYNOPSIS
+        Saves the answers to the compatibility configuration (validated, atomic, previous
+        version kept as <name>.previous.json). Unknown entries of the existing file are
+        kept unchanged.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [PSTypeName('WinLean.Session')] $Session,
+        [Parameter(Mandatory)] [PSTypeName('WinLean.Configuration')] $Configuration,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [System.Collections.IDictionary] $Answers
+    )
+
+    $schemaReference = $Configuration.schemaReference
+    if (-not $Configuration.exists -and -not $schemaReference) {
+        $schemaReference = Get-WinLeanSchemaReference -ConfigurationPath $Configuration.path -SchemaPath $Session.paths.compatibilitySchema
+    }
+    $saved = Save-WinLeanCompatibility -Path $Configuration.path -Requirements $Answers -Unknown $Configuration.unknown `
+        -Description $Configuration.description -SchemaReference $schemaReference -KnownRequirementKeys $Configuration.knownKeys
+    Write-WinLeanLog -Logger $Session.logger -Tag OK -Message "Compatibility configuration saved: $($saved.path)" -Data @{ previousPath = $saved.previousPath }
+    return $saved
+}
+
+# ---------------------------------------------------------------------------
 # Dry run
 # ---------------------------------------------------------------------------
 
@@ -637,6 +737,9 @@ function Get-WinLeanBackups {
 Export-ModuleMember -Function @(
     'New-WinLeanSession'
     'Invoke-WinLeanAnalyze'
+    'Get-WinLeanConfiguration'
+    'Invoke-WinLeanConfigurationQuestionnaire'
+    'Save-WinLeanConfiguration'
     'Invoke-WinLeanDryRun'
     'Invoke-WinLeanApply'
     'Invoke-WinLeanRestorePreview'

@@ -229,6 +229,79 @@ function Format-WinLeanCompatibilitySource {
 }
 
 # ---------------------------------------------------------------------------
+# Compatibility configuration (-Configure)
+# ---------------------------------------------------------------------------
+
+function Format-WinLeanRequirementValue {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowNull()] $Value)
+
+    if ($null -eq $Value) { return 'undeclared' }
+    if ([bool]$Value) { return 'required' }
+    return 'not needed'
+}
+
+function Format-WinLeanConfigurationIntroText {
+    <#
+    .SYNOPSIS
+        Console text shown before the -Configure questions.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] $Configuration,
+        [string] $BasePath
+    )
+
+    $path = if ($BasePath) { Get-WinLeanRelativePath -Path $Configuration.path -BasePath $BasePath } else { $Configuration.path }
+    $declared = @($Configuration.requirements.Keys).Count
+    ''
+    'WINLEAN COMPATIBILITY CONFIGURATION'
+    ''
+    Format-WinLeanLabel -Label 'File' -Value $(if ($Configuration.exists) { $path } else { "$path (new)" }) -Indent 0 -Width 16
+    Format-WinLeanLabel -Label 'Requirements' -Value ('{0} known, {1} declared, {2} undeclared' -f @($Configuration.questions).Count, $declared, (@($Configuration.questions).Count - $declared)) -Indent 0 -Width 16
+    $unknown = @($Configuration.unknown.Keys)
+    if ($unknown.Count -gt 0) {
+        Format-WinLeanLabel -Label 'Kept unchanged' -Value (($unknown -join ', ') + ' (unknown to this WinLean version)') -Indent 0 -Width 16
+    }
+    ''
+    'For each requirement, decide whether this PC needs it. Required (Y) and undeclared (U)'
+    'requirements are preserved: rules that would reduce them are skipped. Only "not needed"'
+    '(N) allows such rules. Detection hints are facts about this PC, not decisions: pressing'
+    'Enter keeps the current answer. Nothing is saved before you confirm the summary.'
+}
+
+function Format-WinLeanConfigurationChangesText {
+    <#
+    .SYNOPSIS
+        Console summary of the answers given in -Configure.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)] $Result)
+
+    $changes = @($Result.changes)
+    ''
+    'SUMMARY'
+    $script:Rule
+    if ($Result.stopped) {
+        'Stopped early: the remaining answers were kept.'
+    }
+    if ($changes.Count -eq 0) {
+        'No changes.'
+        ''
+        return
+    }
+    foreach ($change in $changes) {
+        '  {0}: {1} -> {2}' -f $change.key, (Format-WinLeanRequirementValue -Value $change.before), (Format-WinLeanRequirementValue -Value $change.after)
+    }
+    ''
+    "$($changes.Count) change(s)."
+    ''
+}
+
+# ---------------------------------------------------------------------------
 # Plan
 # ---------------------------------------------------------------------------
 
@@ -828,6 +901,8 @@ function ConvertTo-WinLeanMarkdownReport {
 
 Export-ModuleMember -Function @(
     'Format-WinLeanAnalysisText'
+    'Format-WinLeanConfigurationIntroText'
+    'Format-WinLeanConfigurationChangesText'
     'Format-WinLeanPlanText'
     'Format-WinLeanRuleListText'
     'Format-WinLeanIssueText'

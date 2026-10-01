@@ -14,6 +14,9 @@
     FunctionsToExport    = @(
         'New-WinLeanSession'
         'Invoke-WinLeanAnalyze'
+        'Get-WinLeanConfiguration'
+        'Invoke-WinLeanConfigurationQuestionnaire'
+        'Save-WinLeanConfiguration'
         'Invoke-WinLeanDryRun'
         'Invoke-WinLeanApply'
         'Invoke-WinLeanRestorePreview'
