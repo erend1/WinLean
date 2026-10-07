@@ -174,6 +174,25 @@ Describe 'Source files' {
         }
     }
 
+    It 'search text with ordinal comparisons' {
+        # String.StartsWith/EndsWith/IndexOf/LastIndexOf(string) compare with the current
+        # culture (ICU on .NET 5+), where some characters are ignorable. Literal searches
+        # must pass a StringComparison or use the [char] overload.
+        $pattern = '\.(StartsWith|EndsWith|IndexOf|LastIndexOf)\(\s*(''[^'']*''|"[^"]*")\s*(,\s*[^,()]+)?\)'
+        $files = @(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'src'), (Join-Path $script:RepoRoot 'Tools') -Recurse -File |
+                Where-Object { $_.Extension -in @('.ps1', '.psm1') })
+        $offenders = @(foreach ($file in $files) {
+                $number = 0
+                foreach ($line in [System.IO.File]::ReadAllLines($file.FullName)) {
+                    $number++
+                    foreach ($match in [regex]::Matches($line, $pattern)) {
+                        if ($match.Value -notmatch 'StringComparison') { "$($file.Name):$($number): $($match.Value)" }
+                    }
+                }
+            })
+        $offenders | Should -BeNullOrEmpty
+    }
+
     It 'enable strict mode in every module' {
         foreach ($file in Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'src') -Recurse -Filter '*.psm1') {
             (Get-Content -Raw -LiteralPath $file.FullName) | Should -Match 'Set-StrictMode -Version Latest' -Because $file.Name

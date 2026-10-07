@@ -297,8 +297,8 @@ function Get-WinLeanExecutablePath {
         return $null
     }
     $text = [Environment]::ExpandEnvironmentVariables($CommandLine.Trim())
-    if ($text.StartsWith('"')) {
-        $end = $text.IndexOf('"', 1)
+    if ($text.StartsWith('"', [System.StringComparison]::Ordinal)) {
+        $end = $text.IndexOf([char]'"', 1)
         if ($end -le 1) {
             return $null
         }
@@ -310,13 +310,13 @@ function Get-WinLeanExecutablePath {
             $text = $text.Substring(0, $index + 4)
         }
         else {
-            $space = $text.IndexOf(' ')
+            $space = $text.IndexOf([char]' ')
             if ($space -gt 0) {
                 $text = $text.Substring(0, $space)
             }
         }
     }
-    if ($text.StartsWith('\??\')) {
+    if ($text.StartsWith('\??\', [System.StringComparison]::Ordinal)) {
         $text = $text.Substring(4)
     }
     if ($text.StartsWith('\SystemRoot\', [System.StringComparison]::OrdinalIgnoreCase)) {

@@ -393,7 +393,7 @@ function Remove-WinLeanRegistryKeyIfEmpty {
 
     Assert-WinLeanRegistryLocationAllowed -Path $Path
     $location = ConvertFrom-WinLeanRegistryPath -Path $Path
-    $separator = $location.subKey.LastIndexOf('\')
+    $separator = $location.subKey.LastIndexOf([char]'\')
     if ($separator -lt 0) {
         # Never delete keys directly below a hive root.
         return $false
@@ -469,7 +469,7 @@ function Test-WinLeanRegistryWriteAccess {
                 $key.Dispose()
                 return $true
             }
-            $separator = $subKey.LastIndexOf('\')
+            $separator = $subKey.LastIndexOf([char]'\')
             if ($separator -lt 0) {
                 # Creating a key directly below the hive root: allowed in HKCU only.
                 return ($location.hive -eq 'HKCU')
@@ -1135,7 +1135,7 @@ function Restore-WinLeanRegistryResource {
         if ([string]::Equals($current, $rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
             break
         }
-        $current = $current.Substring(0, $current.LastIndexOf('\'))
+        $current = $current.Substring(0, $current.LastIndexOf([char]'\'))
     }
 }
 

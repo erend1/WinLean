@@ -308,7 +308,7 @@ function Test-WinLeanCondition {
         $actual = $Facts[$fact]
     }
 
-    $separator = $fact.IndexOf('.')
+    $separator = $fact.IndexOf([char]'.')
     $namespace = $fact.Substring(0, $separator)
     $key = $fact.Substring($separator + 1)
 
