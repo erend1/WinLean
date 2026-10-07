@@ -223,8 +223,9 @@ if ($PSCmdlet.ParameterSetName -eq 'Help') {
 }
 
 # Load the engine. Previously loaded copies are removed so that a second run in the same
-# PowerShell session always uses the code on disk.
-Get-Module -All | Where-Object { $_.Name -eq 'WinLean' -or $_.Name.StartsWith('WinLean.', [System.StringComparison]::Ordinal) } | Remove-Module -Force
+# PowerShell session always uses the code on disk. -WhatIf:$false: a dry run (-WhatIf) must
+# still reload the engine, and must not list the modules as "What if" operations.
+Get-Module -All | Where-Object { $_.Name -eq 'WinLean' -or $_.Name.StartsWith('WinLean.', [System.StringComparison]::Ordinal) } | Remove-Module -Force -WhatIf:$false -Confirm:$false
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'src\WinLean.psd1') -Force
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'src\WinLean.Logging.psm1')
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'src\WinLean.Report.psm1')

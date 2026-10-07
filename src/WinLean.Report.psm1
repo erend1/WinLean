@@ -218,7 +218,7 @@ function Format-WinLeanCompatibilitySource {
     )
 
     if (-not $Compatibility.exists) {
-        return 'not configured - every requirement is treated as required (see Config\Compatibility.example.json)'
+        return 'not configured - every requirement is treated as required (run .\WinLean.ps1 -Configure)'
     }
     $source = [string]$Compatibility.source
     if ($BasePath) {

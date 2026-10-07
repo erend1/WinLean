@@ -389,7 +389,7 @@ function Invoke-WinLeanDryRun {
 
     $warnings = New-Object -TypeName System.Collections.Generic.List[string]
     if (-not $compatibility.exists) {
-        $warnings.Add("No compatibility configuration found at '$($Session.paths.compatibility)'. Every requirement is treated as required, so rules with compatibility conditions are skipped. Copy Config\Compatibility.example.json to Config\Compatibility.json to declare your requirements.")
+        $warnings.Add("No compatibility configuration found at '$($Session.paths.compatibility)'. Every requirement is treated as required, so rules with compatibility conditions are skipped. Run .\WinLean.ps1 -Configure to declare your requirements.")
     }
     $perUserTarget = Get-WinLeanPerUserTarget -Session $Session
     if ($perUserTarget -eq 'Unknown') {

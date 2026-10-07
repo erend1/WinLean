@@ -75,6 +75,18 @@ Describe 'Read-only commands on the real repository' {
         @(Get-ChildItem -LiteralPath (Join-Path $script:Data 'Reports\Plans') -Filter '*-Safe-plan.json').Count | Should -Be 1
     }
 
+    It 'reloads the engine quietly when run again in the same session as a dry run' {
+        # Regression: with -WhatIf the reload of the engine modules was itself treated as a
+        # "What if" operation, so the modules were listed instead of being reloaded.
+        $cli = $script:Cli.Replace("'", "''")
+        $data = $script:Data.Replace("'", "''")
+        $command = "& '$cli' -ListRules -DataRoot '$data'; & '$cli' -Profile Safe -WhatIf -DataRoot '$data'; exit `$LASTEXITCODE"
+        $output = (& $script:HostPath -NoProfile -ExecutionPolicy Bypass -Command $command 2>&1 | ForEach-Object { "$_" }) -join "`n"
+        $LASTEXITCODE | Should -Be 0 -Because $output
+        $output | Should -BeLike '*WINLEAN RULES*WINLEAN PLAN*no changes were made*'
+        $output | Should -Not -BeLike '*What if: Performing the operation "Remove-Module"*'
+    }
+
     It 'returns exit code 2 for an unknown profile' {
         (Invoke-WinLeanCli -Script $script:Cli -Arguments @('-Profile', 'DoesNotExist', '-WhatIf', '-DataRoot', $script:Data)).exitCode | Should -Be 2
     }
