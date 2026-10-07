@@ -422,10 +422,16 @@ function Test-WinLeanRuleDefinition {
     foreach ($message in @(Test-WinLeanBenefitDefinition -Benefit (Get-WinLeanProperty -InputObject $Definition -Name 'benefit'))) {
         & $addError 'Benefit' $message
     }
+    # 'validation' is optional so that rule files written before it existed still load;
+    # 'windows.maxValidatedBuild' alone then says which build the rule was validated on.
+    # Shipped rules must have it (repository tests).
     $validation = Get-WinLeanProperty -InputObject $Definition -Name 'validation' -NoEnumerate
     $newestValidatedBuild = 0
-    if (-not (Test-WinLeanEnumerable -Value $validation) -or @($validation).Count -lt 1) {
-        & $addError 'Validation' "'validation' must list at least one validation record (how, on which build and when the rule was validated)."
+    if (-not (Test-WinLeanProperty -InputObject $Definition -Name 'validation')) {
+        $validation = $null
+    }
+    elseif (-not (Test-WinLeanEnumerable -Value $validation) -or @($validation).Count -lt 1) {
+        & $addError 'Validation' "'validation' must list at least one validation record (how, on which build and when the rule was validated), or be omitted."
     }
     else {
         $index = 0

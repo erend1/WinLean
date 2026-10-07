@@ -8,7 +8,8 @@
         $env:WINLEAN_ALLOW_DESTRUCTIVE_TESTS = 'YES'
         .\Tests\Invoke-WinLeanTests.ps1 -Suite Destructive
 
-    Run only in a disposable VM (Windows Sandbox does not support servicing changes).
+    Run only in a disposable VM with a checkpoint. Windows Sandbox is not a suitable
+    environment for servicing changes (see Docs/VmValidation.md).
 #>
 BeforeDiscovery {
     $script:Allowed = $env:WINLEAN_ALLOW_DESTRUCTIVE_TESTS -eq 'YES'

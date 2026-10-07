@@ -1,3 +1,7 @@
+BeforeDiscovery {
+    # -Skip conditions are evaluated during discovery, before BeforeAll runs.
+    $script:CanValidateSchemas = $PSVersionTable.PSVersion.Major -ge 7 -and $null -ne (Get-Command -Name Test-Json -ErrorAction SilentlyContinue)
+}
 BeforeAll {
     . (Join-Path $PSScriptRoot '..\Helpers\TestHelpers.ps1')
     Import-WinLeanTestModule -Name 'WinLean.Validation', 'WinLean.Rules'
@@ -156,6 +160,68 @@ Describe 'Benefit and validation metadata' {
     }
 }
 
+Describe 'Backward compatibility of rule files' {
+    It 'loads a rule file written before validation records existed' {
+        $definition = New-TestRuleDefinition
+        $definition.PSObject.Properties.Remove('validation')
+        @(Test-WinLeanRuleDefinition -Definition $definition | ForEach-Object { "$($_.code): $($_.message)" }) | Should -BeNullOrEmpty
+        $rule = ConvertTo-WinLeanRule -Definition $definition
+        $rule.lastValidated | Should -BeNullOrEmpty
+        $rule.vmValidated | Should -BeFalse
+        @($rule.validation).Count | Should -Be 0
+        $rule.windows.maxValidatedBuild | Should -Be 26200
+    }
+
+    It 'still requires every rule to state its benefit' {
+        $definition = New-TestRuleDefinition
+        $definition.PSObject.Properties.Remove('benefit')
+        Get-IssueCodes -Definition $definition | Should -Contain 'Benefit'
+    }
+}
+
+Describe 'JSON schema and validator' {
+    BeforeAll {
+        $script:RuleSchemaText = Get-Content -Raw -LiteralPath (Join-Path $script:RepoRoot 'Schemas\rule.schema.json')
+    }
+
+    It 'agree on <Case>' -Skip:(-not $script:CanValidateSchemas) -ForEach @(
+        @{ Case = 'a registry value'; Valid = $true; Resource = @{ type = 'RegistryValue'; path = 'HKCU:\Software\X'; name = 'V'; valueType = 'DWord'; value = 1 } }
+        @{ Case = 'a registry value without data'; Valid = $false; Resource = @{ type = 'RegistryValue'; path = 'HKCU:\Software\X'; name = 'V'; valueType = 'DWord' } }
+        @{ Case = 'removing a startup entry'; Valid = $true; Resource = @{ type = 'StartupEntry'; location = 'CurrentUserRun'; name = 'Example'; ensure = 'Absent' } }
+        @{ Case = 'adding a startup entry'; Valid = $true; Resource = @{ type = 'StartupEntry'; location = 'MachineRun'; name = 'Example'; ensure = 'Present'; command = 'C:\Example\example.exe'; valueType = 'ExpandString' } }
+        @{ Case = 'a startup entry without ensure'; Valid = $false; Resource = @{ type = 'StartupEntry'; location = 'CurrentUserRun'; name = 'Example' } }
+        @{ Case = 'a removed startup entry with a command'; Valid = $false; Resource = @{ type = 'StartupEntry'; location = 'CurrentUserRun'; name = 'Example'; ensure = 'Absent'; command = 'x.exe' } }
+        @{ Case = 'an added startup entry without a command'; Valid = $false; Resource = @{ type = 'StartupEntry'; location = 'CurrentUserRun'; name = 'Example'; ensure = 'Present' } }
+        @{ Case = 'a startup entry in RunOnce'; Valid = $false; Resource = @{ type = 'StartupEntry'; location = 'CurrentUserRunOnce'; name = 'Example'; ensure = 'Absent' } }
+        @{ Case = 'an optional feature'; Valid = $true; Resource = @{ type = 'WindowsOptionalFeature'; name = 'TelnetClient'; state = 'Disabled' } }
+        @{ Case = 'an optional feature with payload removal'; Valid = $false; Resource = @{ type = 'WindowsOptionalFeature'; name = 'TelnetClient'; state = 'Removed' } }
+        @{ Case = 'an optional feature with an unknown property'; Valid = $false; Resource = @{ type = 'WindowsOptionalFeature'; name = 'TelnetClient'; state = 'Disabled'; all = $true } }
+        @{ Case = 'an optional feature with an invalid name'; Valid = $false; Resource = @{ type = 'WindowsOptionalFeature'; name = 'Telnet Client'; state = 'Disabled' } }
+        @{ Case = 'an unknown resource type'; Valid = $false; Resource = @{ type = 'Service'; name = 'Spooler' } }
+    ) {
+        # A Medium risk rule with a requirement condition and a restart satisfies the
+        # rule-level constraints of every resource type, so only the resource decides.
+        $definition = New-TestRuleDefinition -Id 'features.sample.set' -Category 'Features' -Resources @($Resource) -Risk 'Medium' `
+            -Conditions @(@{ fact = 'requirement.developerMachine'; operator = 'Equals'; value = $false }) -RequiresReboot $true -TakesEffect 'Reboot'
+        $json = $definition | ConvertTo-Json -Depth 20
+        [bool](Test-Json -Json $json -Schema $script:RuleSchemaText -ErrorAction SilentlyContinue) | Should -Be $Valid -Because 'of the JSON schema'
+        (@(Test-WinLeanRuleDefinition -Definition $definition).Count -eq 0) | Should -Be $Valid -Because 'of the validator'
+    }
+
+    It 'agree on rule metadata: <Case>' -Skip:(-not $script:CanValidateSchemas) -ForEach @(
+        @{ Case = 'a complete rule'; Valid = $true; Extra = @{} }
+        @{ Case = 'an unmeasured performance claim'; Valid = $false; Extra = @{ benefit = @{ type = 'Performance'; value = 'Low'; measurement = 'NotMeasured' } } }
+        @{ Case = 'a measured benefit without its write-up'; Valid = $false; Extra = @{ benefit = @{ type = 'Storage'; value = 'Low'; measurement = 'Measured' } } }
+        @{ Case = 'a measured performance benefit'; Valid = $true; Extra = @{ benefit = @{ type = 'Performance'; value = 'High'; measurement = 'Measured'; measurementFile = 'Docs/Measurements/x.md' } } }
+        @{ Case = 'a VM validation without its record'; Valid = $false; Extra = @{ validation = @(@{ method = 'VmApplyRestore'; build = 26200; date = '2026-09-28' }) } }
+        @{ Case = 'an empty validation list'; Valid = $false; Extra = @{ validation = @() } }
+    ) {
+        $definition = New-TestRuleDefinition -Extra $Extra
+        $json = $definition | ConvertTo-Json -Depth 20
+        [bool](Test-Json -Json $json -Schema $script:RuleSchemaText -ErrorAction SilentlyContinue) | Should -Be $Valid -Because 'of the JSON schema'
+        (@(Test-WinLeanRuleDefinition -Definition $definition).Count -eq 0) | Should -Be $Valid -Because 'of the validator'
+    }
+}
 Describe 'Catalog validation' {
     It 'reports duplicate ids, unknown references and contradictions' {
         $rules = @(

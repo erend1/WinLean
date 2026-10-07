@@ -48,7 +48,12 @@ Enforcement:
 - `-Profile` without `-Apply` is a dry run. `-Apply -WhatIf` is also a dry run.
 - `-Apply` shows the complete plan and asks for confirmation (ConfirmImpact High).
 - Undeclared compatibility requirements are treated as required: conditional rules are
-  skipped until you decide.
+  skipped until you decide. `-Configure` records those decisions; what it detects on the
+  machine is shown as a hint and never becomes a decision by itself.
+- Rules of risk Medium or higher cannot exist without a `requirement.*` condition, so they
+  never apply before the affected feature was declared unnecessary.
+- Resources that do not exist on the system (for example an optional feature that is not
+  part of the image) make a rule Unsupported instead of failing later.
 - Windows builds newer than a rule's `maxValidatedBuild` require `-AllowUntestedBuild`;
   unsupported builds, editions and non-client installations are refused per rule.
 - The plan blocks rules whose current value cannot be captured losslessly (for example
@@ -93,11 +98,17 @@ Enforcement:
 
 ## Testing policy
 
-- Unit tests never touch the real registry (an in-memory fake replaces the provider's I/O).
-- Integration tests use real APIs only inside Pester's TestRegistry key and TestDrive.
-- The destructive suite (applies the real Safe profile) refuses to run unless
-  `WINLEAN_ALLOW_DESTRUCTIVE_TESTS=YES`; run it only in a disposable VM or Windows Sandbox.
-- New Medium/High risk rules must never be tried first on a primary workstation.
+- Unit tests never touch the real system: in-memory fakes replace the registry and the
+  servicing (optional feature) functions.
+- Integration tests write only inside Pester's TestRegistry key and TestDrive; everything
+  else they do is read-only (inventory, optional feature state, access control lists).
+- The destructive suite (the real Safe profile, a disposable entry in the real Run key, the
+  Telnet Client feature) refuses to run unless `WINLEAN_ALLOW_DESTRUCTIVE_TESTS=YES`; run it
+  only in a disposable VM. It never runs in CI; a repository test guards the workflow.
+- New Medium/High risk rules must never be tried first on a primary workstation: validate
+  them in a VM following [VmValidation.md](VmValidation.md). The plan flags such rules until
+  they have a recorded VM validation, and the repository tests keep them out of shipped
+  profiles.
 
 ## Access control lists are observed, never changed
 

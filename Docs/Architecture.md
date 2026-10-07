@@ -57,7 +57,7 @@ everything         -> WinLean.Common (JSON, paths, culture-safe helpers, platfor
 | Providers\WinLean.Providers | provider registry and uniform dispatcher |
 | WinLean.Rules | rule catalog, conditions, the rule interface |
 | WinLean.Inventory | read-only inventory with per-section fault isolation |
-| WinLean.Compatibility | requirements, detected capabilities, facts, suggestions |
+| WinLean.Compatibility | requirements, detected capabilities, facts, suggestions; the `-Configure` questionnaire and the validated, atomic saving of the configuration |
 | WinLean.Policy | profiles, dependency ordering, plan generation |
 | WinLean.Backup | backup directories, manifest, change records, lock |
 | WinLean.Executor | backup-first execution with verification and rollback |
@@ -65,6 +65,11 @@ everything         -> WinLean.Common (JSON, paths, culture-safe helpers, platfor
 | WinLean.Benchmark | read-only measurements and comparison |
 | WinLean.Report | console text and Markdown reports (returns text, writes nothing) |
 | WinLean.Core | session and the commands used by front-ends |
+
+Outside the engine, `Tools\` holds two read-only diagnostic modules with their scripts:
+`WinLean.Evidence` (registry snapshots, attribution of changes to a Settings toggle, evidence
+write-ups) and `WinLean.RegistryAccess` (access control reports and their comparison). They
+import engine modules but are not imported by the engine.
 
 Each module imports its own dependencies and exports an explicit function list, so every
 module can be imported alone in tests. There is no global mutable state: a *session* object
@@ -113,6 +118,45 @@ with both providers.
 Adding a provider (planned: Service, ScheduledTask, AppxPackage) means implementing this
 contract and registering it in `Providers\WinLean.Providers.psm1`; the policy engine,
 executor, backup and restore do not change.
+
+### Rule-level constraints
+
+A provider may register a `RuleConstraints` operation for checks that involve the whole rule.
+Validation calls it for every resource that passed its own validation:
+
+| Resource type | Constraint |
+|---|---|
+| `StartupEntry` | `ensure: Present` (a program run at every sign-in) needs risk Medium or higher |
+| `WindowsOptionalFeature` | risk Medium or higher; `takesEffect: Reboot`; disabling a feature that a compatibility requirement depends on needs `requirement.<key> Equals false` |
+
+### Reading and changing optional features
+
+```text
+Get-WinLeanOptionalFeatureRecord      elevated: Get-WindowsOptionalFeature (DISM)
+                                      otherwise: Win32_OptionalFeature (CIM, no pending states)
+Set / Restore
+  -> Get-WinLeanFeatureOperation      Enable | Disable | DisableRemovePayload | nothing
+  -> Invoke-WinLeanFeatureTransition  snapshot of all features
+                                      Invoke-WinLeanOptionalFeatureChange (DISM, -NoRestart)
+                                      snapshot of all features
+                                      other features changed? revert target and collateral
+                                      changes, throw CollateralChange
+  -> { rebootRequired }               DISM RestartNeeded, or the feature is pending
+```
+
+## Compatibility questionnaire
+
+```text
+Get-WinLeanConfiguration                   read the file (refuse files with errors), build one
+                                           question per schema key, optional detection hints
+Invoke-WinLeanConfigurationQuestionnaire   injected reader/writer; Enter keeps an answer; returns
+                                           the answers and the list of changes
+Save-WinLeanConfiguration                  write a temporary file, read it back, validate it,
+                                           replace the target in one step, keep the previous version
+```
+
+The questionnaire never derives an answer from a detection result: capabilities appear as
+text only, and the answer dictionary changes only in response to input.
 
 ## Plan evaluation order
 
@@ -191,6 +235,20 @@ that is not Restored/RestoredWithSkips.
 - JSON: explicit depth, UTF-8 without BOM, atomic replacement; on PowerShell 7.5+
   `-DateKind String` keeps ISO-like strings as strings.
 - Source files are ASCII-only so Windows PowerShell 5.1 reads them correctly without a BOM.
+- `String.StartsWith`, `EndsWith`, `IndexOf` and `LastIndexOf` with a *string* argument
+  compare with the current culture (ICU on .NET 5 and later), where some characters - for
+  example NUL - are ignorable and match at position 0. Pass a `StringComparison` or use the
+  `[char]` overload; a repository test enforces this for `src` and `Tools`.
+- Under strict mode, reading a property of `$null` throws. Use `Get-WinLeanProperty` for
+  values that may be absent (optional JSON properties, results of mocked functions).
+- A hexadecimal literal with the high bit set (`0x80000000`) is a negative 32-bit number;
+  write `0x80000000L` for access masks.
+- `$profile`, `$input`, `$args`, `$matches` and other automatic variables must not be used
+  as variable or parameter names (enforced by static analysis).
+- DISM cmdlets do not support `-WhatIf`; `Get-Acl -LiteralPath` fails for registry keys on
+  Windows PowerShell 5.1 (use `-Path` or the .NET API).
+- Windows PowerShell 5.1 turns the redirected stderr of a child process into terminating
+  errors; scripts that are tested end to end report failures on stdout.
 
 ## Deviations from the suggested layout
 
@@ -204,3 +262,5 @@ that is not Restored/RestoredWithSkips.
 | `Config\Compatibility.json` | `Config\Compatibility.example.json` tracked; `Config\Compatibility.json` local and ignored | requirements are machine-specific decisions |
 | per-category backup files | one `changes.json` | a single ordered record is simpler to restore correctly and cannot become inconsistent |
 | - | `Logs\`, `Tests\Destructive\`, `Tests\Helpers\` | text/JSON logs; destructive tests separated and gated |
+| - | `Tools\`, `Docs\Evidence\`, `Docs\Validation\`, `Docs\Measurements\` | read-only diagnostics, and the records that rule metadata refers to |
+| a `StartupFolder` resource | not implemented | removing a shortcut needs a lossless file backup; planned |

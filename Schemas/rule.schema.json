@@ -8,7 +8,7 @@
   "required": [
     "schemaVersion", "id", "name", "category", "description", "rationale", "risk", "reversible",
     "requiresReboot", "takesEffect", "windows", "conditions", "dependencies", "conflicts",
-    "effects", "sideEffects", "benefit", "references", "validation", "resources"
+    "effects", "sideEffects", "benefit", "references", "resources"
   ],
   "anyOf": [
     { "properties": { "references": { "minItems": 1 } } },
@@ -150,7 +150,7 @@
       }
     },
     "validation": {
-      "description": "How, on which Windows build and when the rule was validated. windows.maxValidatedBuild must equal the newest build listed here.",
+      "description": "How, on which Windows build and when the rule was validated. Optional for compatibility with older rule files, required for shipped rules. When present, windows.maxValidatedBuild must equal the newest build listed here.",
       "type": "array",
       "minItems": 1,
       "items": {

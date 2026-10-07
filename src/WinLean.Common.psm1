@@ -54,14 +54,21 @@ $script:FailureClasses = @(
 function Get-WinLeanVersion {
     <#
     .SYNOPSIS
-        Returns the WinLean version from the module manifest (single source of truth).
+        Returns the WinLean version from the module manifest (single source of truth),
+        including the prerelease label when there is one: '0.2.0-alpha'.
     #>
     [CmdletBinding()]
     [OutputType([string])]
     param()
 
     $manifest = Import-PowerShellDataFile -LiteralPath $script:ModuleManifestPath
-    return [string]$manifest.ModuleVersion
+    $version = [string]$manifest.ModuleVersion
+    $privateData = Get-WinLeanProperty -InputObject $manifest -Name 'PrivateData'
+    $prerelease = [string](Get-WinLeanProperty -InputObject (Get-WinLeanProperty -InputObject $privateData -Name 'PSData') -Name 'Prerelease' -Default '')
+    if ($prerelease) {
+        return "$version-$prerelease"
+    }
+    return $version
 }
 
 # ---------------------------------------------------------------------------

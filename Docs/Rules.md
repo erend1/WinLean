@@ -25,7 +25,7 @@ gives editors completion and inline errors (add `"$schema": "../../Schemas/rule.
 | `benefit` | yes | what the rule is good for: `type`, `value`, `measurement` (see [Benefit](#benefit)) |
 | `references` | yes | `https://` sources that document the exact setting (may be `[]` only when `evidence` is present) |
 | `evidence` | no | recorded observations of what a Settings toggle writes (see [Evidence standard](#evidence-standard)) |
-| `validation` | yes | how, on which build and when the rule was validated (see [Validation records](#validation-records)) |
+| `validation` | no (required for shipped rules) | how, on which build and when the rule was validated (see [Validation records](#validation-records)) |
 | `resources` | yes | declarative resources: `RegistryValue`, `StartupEntry`, `WindowsOptionalFeature` |
 | `tags` | no | lowercase words |
 
@@ -71,6 +71,9 @@ answer how the rule was validated, on which Windows build and when:
 | `SourceReview` | the setting was checked against its references (or evidence) on that build: policy definitions, documented values, the value read on a real system |
 | `VmApplyRestore` | the rule was applied, verified and restored with WinLean in a disposable VM following [VmValidation.md](VmValidation.md); `file` names the validation record in `Docs/Validation/` |
 
+- `validation` is optional, so rule files written before it existed still load (their
+  `windows.maxValidatedBuild` then is the only statement about validation, and "last
+  validated" is shown as unknown). Every shipped rule must have it (repository tests).
 - `windows.maxValidatedBuild` must equal the newest build in `validation`, so the two cannot
   drift apart; every record must lie within `minBuild`..`maxBuild`.
 - `date` is `yyyy-MM-dd` and may not lie in the future. The newest date is shown as "last

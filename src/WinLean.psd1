@@ -1,6 +1,6 @@
 @{
     RootModule           = 'WinLean.Core.psm1'
-    ModuleVersion        = '0.1.0'
+    ModuleVersion        = '0.2.0'
     GUID                 = 'defaa4ea-3aa2-48dd-8d1f-00461dc0b4db'
     Author               = 'WinLean contributors'
     Copyright            = '(c) 2026 WinLean contributors. Released under the MIT License.'
@@ -33,6 +33,8 @@
 
     PrivateData          = @{
         PSData = @{
+            # Milestone 0.2A is the first half of 0.2; Get-WinLeanVersion reports '0.2.0-alpha'.
+            Prerelease = 'alpha'
             Tags       = @('Windows', 'Configuration', 'Optimization', 'Privacy', 'Reversible')
             LicenseUri = 'https://opensource.org/license/mit'
         }

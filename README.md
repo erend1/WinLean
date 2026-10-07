@@ -9,9 +9,15 @@ inventories the system, evaluates a profile of reviewed rules against *your* com
 requirements, shows an explicit plan, and only then - after a backup - applies changes,
 verifies every one of them and lets you restore the previous values.
 
-Milestone 0.1 builds the foundation: inventory, compatibility context, profiles, rule
+Milestone 0.1 built the foundation: inventory, compatibility context, profiles, rule
 evaluation, dry run, backup, execution with verification, logging, reports, benchmarks and
 restore - with nine deliberately conservative, documented rules.
+
+Milestone 0.2A (version 0.2.0-alpha) extends the engine without adding rules: a
+compatibility questionnaire (`-Configure`), two new resource providers (startup entries and
+Windows optional features), benefit and validation metadata for every rule, a stricter
+evidence capture, a read-only registry access report, static analysis and a documented VM
+validation procedure. The profiles are unchanged on purpose.
 
 ## What WinLean is
 
@@ -29,7 +35,11 @@ restore - with nine deliberately conservative, documented rules.
 - Not a "debloat script". It does not delete services, remove system components, strip
   AppX packages blindly or copy tweaks from forums.
 - It never disables Windows Update, Microsoft Defender, Windows Firewall, Secure Boot or
-  servicing - and it refuses to write to those areas of the registry even if a rule asks.
+  servicing - and it refuses to write to those areas of the registry, to change the
+  corresponding optional features or to touch the Windows Security startup entry, even if a
+  rule asks.
+- It does not change services, scheduled tasks or AppX packages yet: those need dedicated,
+  reviewed providers and are not implemented.
 - It does not optimize for the lowest process count. The target is the least *unnecessary
   background activity* while preserving what you actually use.
 - It does not escalate privileges on its own, run AI-generated commands, or create custom
@@ -55,6 +65,11 @@ folklore.
    machine settings are *blocked* with a clear message instead of trying to elevate.
 5. A change that cannot be backed up losslessly is not made.
 6. On newer Windows builds than a rule was validated on, the rule needs `-AllowUntestedBuild`.
+7. No performance claim without a measurement: every rule states its benefit (privacy,
+   distraction, security, ...) qualitatively, and whether it was measured.
+8. Medium and High risk rules apply only after you declared the affected feature unnecessary,
+   and enter a shipped profile only after a recorded apply/restore in a disposable VM.
+9. Access control lists are observed, never changed.
 
 Details: [Docs/Safety.md](Docs/Safety.md).
 
@@ -71,6 +86,7 @@ If you downloaded WinLean as a ZIP file, unblock it first:
 
 ```powershell
 .\WinLean.ps1 -Analyze                      # read-only inventory and summary
+.\WinLean.ps1 -Configure                    # declare what this PC needs (questionnaire)
 .\WinLean.ps1 -Profile Safe -WhatIf         # dry run: what would change and why
 .\WinLean.ps1 -Profile Safe -Apply          # plan, confirm, back up, apply, verify, report
 .\WinLean.ps1 -Restore Latest -WhatIf       # preview the restore
@@ -157,10 +173,20 @@ Methodology and limits: [Docs/Benchmarking.md](Docs/Benchmarking.md).
 
 ## Compatibility configuration
 
-Copy `Config\Compatibility.example.json` to `Config\Compatibility.json` (not tracked by
-Git) and set every requirement: `true` = WinLean must preserve it, `false` = not needed.
-Remove a line to leave it undeclared (treated as required). `-Analyze` shows which features
-were detected on the machine and suggests declaring them. Details:
+```powershell
+.\WinLean.ps1 -Configure
+```
+
+The questionnaire asks, topic by topic, what this PC must keep supporting (printing,
+Bluetooth, Hyper-V, WSL, gaming, ...) and writes `Config\Compatibility.json` (not tracked by
+Git): `Y` = required, WinLean must preserve it; `N` = not needed; `U` or no answer =
+undeclared, which is treated as required. It shows what a read-only inventory detected on
+the machine as a hint, but a detected feature never becomes a requirement - and an undetected
+one never becomes "not needed" - unless you answer. Existing answers are kept, the changes
+are summarized before anything is written, and the previous file is kept as
+`Compatibility.previous.json`.
+
+You can also copy `Config\Compatibility.example.json` and edit it by hand. Details:
 [Docs/Compatibility.md](Docs/Compatibility.md).
 
 ## Profiles
@@ -196,9 +222,19 @@ also be given by path: `-Profile D:\profiles\MyPC.json`.
 
 A rule is a JSON file in `Rules\<Category>\<rule-id>.json`. It contains metadata (risk,
 reversibility, supported builds and editions, compatibility conditions, dependencies,
-conflicts, effects, side effects, references) and one or more **declarative resources** -
-for example a registry value and its desired data. Rules contain no code: apply, verify and
-undo are implemented once per resource type by a reviewed provider.
+conflicts, effects, side effects, its benefit, its sources and how it was validated) and one
+or more **declarative resources** - for example a registry value and its desired data. Rules
+contain no code: apply, verify and undo are implemented once per resource type by a reviewed
+provider.
+
+| Resource type | Manages | Notes |
+|---|---|---|
+| `RegistryValue` | one registry value (set or absent) | exact capture of every restorable value kind; protected locations are refused |
+| `StartupEntry` | a program in a Run key (present or absent) | Run keys only; never RunOnce, Startup folders or Task Manager's `StartupApproved` data |
+| `WindowsOptionalFeature` | a Windows optional feature (enabled or disabled) | through DISM only; detects and reverts collateral changes; reports restarts |
+
+No shipped rule uses the two new types yet: they exist so that such rules can be written,
+reviewed and validated in a VM first.
 
 ```json
 {
@@ -207,6 +243,8 @@ undo are implemented once per resource type by a reviewed provider.
   "risk": "Low",
   "windows": { "minBuild": 22000, "maxValidatedBuild": 26200 },
   "conditions": [],
+  "benefit": { "type": "Security", "value": "Low", "measurement": "NotMeasured" },
+  "validation": [{ "method": "SourceReview", "build": 26200, "date": "2026-09-28" }],
   "resources": [
     {
       "type": "RegistryValue",
@@ -230,12 +268,19 @@ catalog with sources and the research log of rejected candidates.)
    observation captured in a disposable VM with `Tools\Capture-WinLeanEvidence.ps1`
    (see [Docs/Evidence](Docs/Evidence/README.md)). Forum posts and other scripts are not enough.
 2. Write `Rules\<Category>\<category-prefix>.<subject>.<action>.json` with the exact
-   registry location, effects, side effects, the Windows default and references.
-3. Declare compatibility conditions for anything feature-dependent (Medium risk).
-4. Run `.\WinLean.ps1 -Validate` and `.\Tests\Invoke-WinLeanTests.ps1 -Suite All`.
-5. Check the plan on a real machine (`-WhatIf`), then apply and restore it in a disposable
-   VM (`-Suite Destructive`).
-6. Add the rule to a profile only when it meets every point of the checklist below.
+   resource, effects, side effects, the Windows default and references.
+3. State the benefit honestly (`benefit`): its type, a qualitative value, and whether it was
+   measured. A performance claim needs a measurement in `Docs\Measurements`.
+4. Declare compatibility conditions for anything feature-dependent. Medium and High risk
+   rules must have a `requirement.*` condition; rules that disable an optional feature must
+   require the matching requirement to be `false`.
+5. Record how you validated it (`validation`): a `SourceReview` with build and date.
+6. Run `.\WinLean.ps1 -Validate`, `.\Tests\Invoke-WinLeanTests.ps1 -Suite All` and
+   `.\Tests\Invoke-WinLeanAnalysis.ps1`.
+7. Check the plan (`-WhatIf`), then apply, verify and restore the rule in a disposable VM
+   following [Docs/VmValidation.md](Docs/VmValidation.md), and add the `VmApplyRestore`
+   record. Never try a Medium or High risk rule on a machine you depend on first.
+8. Add the rule to a profile only when it meets every point of the checklist below.
 
 ### Rule development checklist
 
@@ -251,20 +296,33 @@ catalog with sources and the research log of rejected candidates.)
 - [ ] Verification is meaningful (the value is read back; policy values may be overridden
       by organizational policy - documented).
 - [ ] Applying twice changes nothing (idempotent).
-- [ ] The optimization or privacy value is plausible and stated in `rationale`.
-- [ ] Validation, unit and integration tests pass; apply/restore tested in a VM.
+- [ ] The benefit is stated in `benefit` and `rationale` without unmeasured performance
+      claims; privacy or usability benefits are not presented as performance.
+- [ ] `validation` records how, on which build and when the rule was validated.
+- [ ] Validation, static analysis, unit and integration tests pass.
+- [ ] Apply, verify and restore succeeded in a disposable VM and are recorded
+      (`VmApplyRestore`) - mandatory for Medium and High risk rules in a profile.
 
 ## Testing
 
 ```powershell
 .\Tests\Invoke-WinLeanTests.ps1 -Bootstrap        # once: saves Pester 5 to .tools (repo-local)
-.\Tests\Invoke-WinLeanTests.ps1 -Suite Unit        # no system changes (fake registry)
+.\Tests\Invoke-WinLeanTests.ps1 -Suite Unit        # no system changes (in-memory fakes)
 .\Tests\Invoke-WinLeanTests.ps1 -Suite All         # + integration tests in TestRegistry/TestDrive
+.\Tests\Invoke-WinLeanAnalysis.ps1 -Bootstrap     # static analysis (PSScriptAnalyzer, 5.1 and 7 syntax)
 ```
 
-The destructive suite applies and restores the real Safe profile. Run it only in a disposable
-VM or Windows Sandbox with `$env:WINLEAN_ALLOW_DESTRUCTIVE_TESTS = 'YES'`. See
-[Docs/Testing.md](Docs/Testing.md).
+The destructive suite changes the real system (it applies and restores the Safe profile, a
+disposable startup entry and the Telnet Client feature). Run it only in a disposable VM with
+`$env:WINLEAN_ALLOW_DESTRUCTIVE_TESTS = 'YES'`; it never runs in CI. See
+[Docs/Testing.md](Docs/Testing.md) and [Docs/VmValidation.md](Docs/VmValidation.md).
+
+## Diagnostic tools
+
+| Tool | Purpose |
+|---|---|
+| `Tools\Capture-WinLeanEvidence.ps1` | In a VM: records what a Settings toggle writes - baseline, switch, switch back - and which changes are attributable to it. Read-only. |
+| `Tools\Get-WinLeanRegistryAccessReport.ps1` | Lists explicit and inherited access entries of registry keys and compares two systems. Read-only; WinLean never changes access control lists. |
 
 ## Exit codes
 
@@ -280,14 +338,16 @@ VM or Windows Sandbox with `$env:WINLEAN_ALLOW_DESTRUCTIVE_TESTS = 'YES'`. See
 ```text
 WinLean.ps1            CLI
 src/                   engine (WinLean.Core is the facade used by the CLI and future GUIs)
-  Providers/           resource providers (RegistryValue in 0.1)
+  Providers/           resource providers: RegistryValue, StartupEntry, WindowsOptionalFeature
 Rules/<Category>/      one JSON file per rule
 Profiles/              Safe, Lean, Minimal, Example.Custom
-Config/                Compatibility.example.json (copy to Compatibility.json), Packages.json
+Config/                Compatibility.example.json, Packages.json (Compatibility.json is local)
 Schemas/               JSON schemas for rules, profiles and compatibility (editor support)
-Tests/                 Unit, Integration, Destructive, Helpers, Invoke-WinLeanTests.ps1
-Tools/                 Capture-WinLeanEvidence.ps1 (record what a Settings toggle writes, in a VM)
-Docs/                  Architecture, Rules, Safety, Benchmarking, Compatibility, Testing, Evidence
+Tests/                 Unit, Integration, Destructive, Helpers, test and analysis runners
+Tools/                 evidence capture and registry access report (both read-only)
+Docs/                  Architecture, Rules, Safety, Benchmarking, Compatibility, Testing,
+                       VmValidation; Evidence, Validation and Measurements records
+PSScriptAnalyzerSettings.psd1   static analysis settings
 Backups/ Reports/ Logs/  runtime output (not tracked by Git)
 ```
 

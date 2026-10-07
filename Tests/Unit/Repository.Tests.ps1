@@ -141,7 +141,8 @@ Describe 'Schemas and configuration' {
         @($properties.evidence.items.properties.method.enum) | Should -Be $vocabulary.evidenceMethods
         @($properties.validation.items.properties.method.enum) | Should -Be $vocabulary.validationMethods
         @($script:RuleSchema.required) | Should -Contain 'benefit'
-        @($script:RuleSchema.required) | Should -Contain 'validation'
+        # 'validation' stays optional for rule files written before it existed.
+        @($script:RuleSchema.required) | Should -Not -Contain 'validation'
     }
 
     It 'have a compatibility example that declares every known requirement' {

@@ -147,3 +147,15 @@ Describe 'Platform facts' {
         }
     }
 }
+
+Describe 'Version' {
+    It 'comes from the module manifest, including its prerelease label' {
+        $manifest = Import-PowerShellDataFile -LiteralPath (Join-Path $script:RepoRoot 'src\WinLean.psd1')
+        $expected = [string]$manifest.ModuleVersion
+        if ($manifest.PrivateData.PSData.ContainsKey('Prerelease') -and $manifest.PrivateData.PSData.Prerelease) {
+            $expected = "$expected-$($manifest.PrivateData.PSData.Prerelease)"
+        }
+        Get-WinLeanVersion | Should -Be $expected
+        Get-WinLeanVersion | Should -Match '^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$'
+    }
+}
