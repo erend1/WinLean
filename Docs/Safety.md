@@ -99,6 +99,44 @@ Enforcement:
   `WINLEAN_ALLOW_DESTRUCTIVE_TESTS=YES`; run it only in a disposable VM or Windows Sandbox.
 - New Medium/High risk rules must never be tried first on a primary workstation.
 
+## Access control lists are observed, never changed
+
+WinLean decides whether a rule can be applied by probing real write access, so it works
+correctly with whatever access control a key has. It never modifies, "normalizes" or
+"repairs" access control lists or owners, and it has no code that could.
+
+**Observation (milestone 0.1, Windows 11 Pro 25H2, build 26200).** On the development
+machine the signed-in standard user can write to `HKCU\Software\Policies` without
+elevation: the key has inheritance disabled and an explicit entry granting the user account
+FullControl, whereas the sibling key `HKCU\Software\Microsoft\Windows\CurrentVersion\Policies`
+grants the same account read access only. Consequently `privacy.tailored-experiences.disable`
+is Applicable there without elevation, while on other systems it may need an elevated session
+of the same user.
+
+This is recorded as an observation, not as a defect. Whether it deviates from a clean
+installation has **not** been established: that requires comparing it with a clean VM of the
+same Windows build and edition, and an explanation of every difference (installed software,
+policy, an in-place upgrade or migration, a manual change). Until then no conclusion is
+drawn, and nothing is changed either way.
+
+The read-only diagnostic lists explicit and inherited entries and compares two systems:
+
+```powershell
+.\Tools\Get-WinLeanRegistryAccessReport.ps1                              # report the policy keys
+.\Tools\Get-WinLeanRegistryAccessReport.ps1 -OutputPath .\access.json    # in a clean VM of the same build
+.\Tools\Get-WinLeanRegistryAccessReport.ps1 -CompareWith .\access.json   # on the system under examination
+```
+
+- For each key: owner, whether inheritance is disabled, every entry (explicit or inherited,
+  allow or deny, principal, scope, rights), which entries can change the key, and whether the
+  current process can write.
+- The comparison is marked **not conclusive** unless both reports come from the same Windows
+  build and edition. Even a conclusive difference only shows *that* the systems differ, not
+  why, or that the difference is harmful.
+- Saved reports contain no user names; machine-specific account SIDs are reduced to their
+  relative id and the current user is stored as `CurrentUser`, so reports can be compared
+  across machines.
+
 ## Known limitations
 
 - Policy-based rules can be overridden by domain or MDM policy; the plan warns on
