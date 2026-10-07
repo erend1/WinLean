@@ -300,6 +300,7 @@ function Set-WinLeanStartupResource {
     .SYNOPSIS
         Adds or removes the Run value. Task Manager's StartupApproved data is not touched.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSShouldProcess', '', Justification = 'ShouldProcess is implemented by the registry provider; -WhatIf is passed on.')]
     [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)] $Resource)
 
@@ -313,6 +314,7 @@ function Restore-WinLeanStartupResource {
         Writes the captured Run value back exactly (command and value kind), or removes an
         entry that did not exist before.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSShouldProcess', '', Justification = 'ShouldProcess is implemented by the registry provider; -WhatIf is passed on.')]
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)] $Resource,

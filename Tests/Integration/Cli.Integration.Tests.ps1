@@ -171,8 +171,8 @@ Describe 'Apply and restore cycle in a sandbox' -Skip:(-not $script:IsWindows11C
         }
         Write-SandboxRule -Id 'development.sandbox-existing.set' -Resources @(@{ type = 'RegistryValue'; path = "$script:Sandbox\Existing"; name = 'Value'; valueType = 'DWord'; value = 1 })
         Write-SandboxRule -Id 'development.sandbox-new.set' -Dependencies @('development.sandbox-existing.set') -Resources @(@{ type = 'RegistryValue'; path = "$script:Sandbox\New\Deep"; name = 'Value'; valueType = 'String'; value = 'hello' })
-        $profile = @{ schemaVersion = 1; name = 'Sandbox'; description = 'Sandbox'; extends = $null; rules = @('development.sandbox-new.set', 'development.sandbox-existing.set'); exclude = @(); maxRisk = 'Low' }
-        Set-Content -LiteralPath (Join-Path $install 'Profiles\Sandbox.json') -Value ($profile | ConvertTo-Json) -Encoding utf8
+        $sandboxProfile = @{ schemaVersion = 1; name = 'Sandbox'; description = 'Sandbox'; extends = $null; rules = @('development.sandbox-new.set', 'development.sandbox-existing.set'); exclude = @(); maxRisk = 'Low' }
+        Set-Content -LiteralPath (Join-Path $install 'Profiles\Sandbox.json') -Value ($sandboxProfile | ConvertTo-Json) -Encoding utf8
 
         New-Item -Path "$script:Sandbox\Existing" -Force | Out-Null
         Set-ItemProperty -LiteralPath "$script:Sandbox\Existing" -Name 'Value' -Value 0 -Type DWord

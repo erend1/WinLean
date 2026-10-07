@@ -26,6 +26,7 @@
 .EXAMPLE
     .\Tests\Invoke-WinLeanTests.ps1 -Path .\Tests\Unit\Plan.Tests.ps1 -Verbosity Detailed
 #>
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Console progress of a developer tool.')]
 [CmdletBinding()]
 param(
     [ValidateSet('Unit', 'Integration', 'All', 'Destructive')]

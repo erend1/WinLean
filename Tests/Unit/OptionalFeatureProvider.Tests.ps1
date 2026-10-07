@@ -107,6 +107,78 @@ Describe 'WindowsOptionalFeature state semantics' {
     }
 }
 
+Describe 'Reading feature state' {
+    BeforeAll {
+        $script:Module = 'WinLean.Provider.OptionalFeature'
+        function New-ServicingError {
+            param([int] $HResult)
+            return New-Object -TypeName System.Runtime.InteropServices.COMException -ArgumentList 'Servicing error (test).', $HResult
+        }
+    }
+
+    Context 'elevated (DISM)' {
+        BeforeEach {
+            Mock -ModuleName $script:Module -CommandName Test-WinLeanOptionalFeatureServicingAccess -MockWith { $true }
+        }
+
+        It 'returns the state DISM reports, including pending states' {
+            Mock -ModuleName $script:Module -CommandName Get-WindowsOptionalFeature -MockWith { [pscustomobject]@{ FeatureName = 'TelnetClient'; State = 'EnablePending' } }
+            $record = Get-WinLeanOptionalFeatureRecord -Name 'TelnetClient'
+            $record.state | Should -Be 'EnablePending'
+            $record.source | Should -Be 'Dism'
+        }
+
+        It 'treats the documented "unknown feature" error as not present' {
+            Mock -ModuleName $script:Module -CommandName Get-WindowsOptionalFeature -MockWith { throw (New-ServicingError -HResult -2146498548) }
+            Mock -ModuleName $script:Module -CommandName Get-WinLeanOptionalFeatureSnapshot -MockWith { throw 'must not be needed' }
+            (Get-WinLeanOptionalFeatureRecord -Name 'Missing-Feature').state | Should -Be 'NotPresent'
+        }
+
+        It 'confirms other errors against the complete feature list before reporting not present' {
+            Mock -ModuleName $script:Module -CommandName Get-WindowsOptionalFeature -MockWith { throw (New-ServicingError -HResult -2147467259) }
+            Mock -ModuleName $script:Module -CommandName Get-WinLeanOptionalFeatureSnapshot -MockWith {
+                $all = New-Object -TypeName 'System.Collections.Generic.Dictionary[string,string]' -ArgumentList ([System.StringComparer]::OrdinalIgnoreCase)
+                $all['TelnetClient'] = 'Disabled'
+                , $all
+            }
+            (Get-WinLeanOptionalFeatureRecord -Name 'Missing-Feature').state | Should -Be 'NotPresent'
+            { Get-WinLeanOptionalFeatureRecord -Name 'TelnetClient' } | Should -Throw -ExpectedMessage '*Servicing error (test).*'
+        }
+
+        It 'reports the original error when the feature list cannot be read either' {
+            Mock -ModuleName $script:Module -CommandName Get-WindowsOptionalFeature -MockWith { throw (New-ServicingError -HResult -2147467259) }
+            Mock -ModuleName $script:Module -CommandName Get-WinLeanOptionalFeatureSnapshot -MockWith { throw 'list unavailable' }
+            { Get-WinLeanOptionalFeatureRecord -Name 'TelnetClient' } | Should -Throw -ExpectedMessage '*Servicing error (test).*'
+        }
+    }
+
+    Context 'not elevated (Win32_OptionalFeature)' {
+        BeforeEach {
+            Mock -ModuleName $script:Module -CommandName Test-WinLeanOptionalFeatureServicingAccess -MockWith { $false }
+            Mock -ModuleName $script:Module -CommandName Get-WindowsOptionalFeature -MockWith { throw 'DISM must not be used without elevation' }
+        }
+
+        It 'maps install state <InstallState> to <Expected>' -ForEach @(
+            @{ InstallState = 1; Expected = 'Enabled' }
+            @{ InstallState = 2; Expected = 'Disabled' }
+            @{ InstallState = 3; Expected = 'DisabledWithPayloadRemoved' }
+            @{ InstallState = 4; Expected = 'Unknown' }
+            @{ InstallState = 9; Expected = 'Unknown' }
+        ) {
+            Mock -ModuleName $script:Module -CommandName Get-CimInstance -MockWith { [pscustomobject]@{ Name = 'TelnetClient'; InstallState = $InstallState } }
+            $record = Get-WinLeanOptionalFeatureRecord -Name 'TelnetClient'
+            $record.state | Should -Be $Expected
+            $record.source | Should -Be 'Cim'
+        }
+
+        It 'reports a feature without an instance as not present' {
+            Mock -ModuleName $script:Module -CommandName Get-CimInstance -MockWith { }
+            (Get-WinLeanOptionalFeatureRecord -Name 'Missing-Feature').state | Should -Be 'NotPresent'
+            Should -Invoke -ModuleName $script:Module -CommandName Get-WindowsOptionalFeature -Times 0 -Exactly
+        }
+    }
+}
+
 Describe 'WindowsOptionalFeature planning' {
     BeforeEach {
         $script:FakeFeatures = New-FakeFeatureStore -Features @{ TelnetClient = 'Enabled' }

@@ -45,8 +45,8 @@ Describe 'Get-WinLeanRegistrySnapshot' {
         $switches.Enqueue(1)
         $vm = [pscustomobject]@{ productName = 'Windows 11 Pro'; editionId = 'Professional'; displayVersion = '25H2'; build = 26200; ubr = 1; architecture = 'X64'; kind = 'VirtualMachine'; detail = 'test'; confirmedBy = 'Detection' }
         $capture = Invoke-WinLeanEvidenceCapture -RuleId 'privacy.test.disable' -Setting 'Test toggle' -TargetState 'Off' -OriginalState 'On' -Path @($key) -Depth 1 `
-            -BaselineSeconds 0 -Environment $vm -WriteLine { param($Line) } `
-            -Prompt { param($Message) Set-ItemProperty -LiteralPath $key -Name 'Toggle' -Value $switches.Dequeue() -Type DWord }.GetNewClosure()
+            -BaselineSeconds 0 -Environment $vm -WriteLine { } `
+            -Prompt { Set-ItemProperty -LiteralPath $key -Name 'Toggle' -Value $switches.Dequeue() -Type DWord }.GetNewClosure()
 
         $attributable = @($capture.findings | Where-Object { $_.classification -eq 'Attributable' })
         $attributable.Count | Should -Be 1

@@ -213,12 +213,25 @@ function Get-WinLeanOptionalFeatureRecord {
             $feature = Get-WindowsOptionalFeature -Online -FeatureName $Name -ErrorAction Stop
         }
         catch {
-            for ($exception = $_.Exception; $null -ne $exception; $exception = $exception.InnerException) {
+            $failure = $_
+            for ($exception = $failure.Exception; $null -ne $exception; $exception = $exception.InnerException) {
                 if ($exception.HResult -eq $script:UnknownFeatureHResult) {
                     return [pscustomobject]@{ name = $Name; state = 'NotPresent'; source = 'Dism' }
                 }
             }
-            throw
+            # Do not depend on one error code: a feature that the complete feature list does
+            # not contain is not part of this image. Any other failure is reported as it is.
+            $known = $null
+            try {
+                $known = Get-WinLeanOptionalFeatureSnapshot
+            }
+            catch {
+                throw $failure
+            }
+            if (-not $known.ContainsKey($Name)) {
+                return [pscustomobject]@{ name = $Name; state = 'NotPresent'; source = 'Dism' }
+            }
+            throw $failure
         }
         if ($null -eq $feature) {
             return [pscustomobject]@{ name = $Name; state = 'NotPresent'; source = 'Dism' }
@@ -501,6 +514,7 @@ function Test-WinLeanOptionalFeatureStateRestorable {
 }
 
 function Test-WinLeanOptionalFeatureResourceAccess {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Resource', Justification = 'Provider contract; changing any optional feature requires elevation.')]
     [CmdletBinding()]
     [OutputType([bool])]
     param([Parameter(Mandatory)] $Resource)

@@ -363,23 +363,23 @@ function Invoke-WinLeanDryRun {
 
     $logger = $Session.logger
     $catalog = Get-WinLeanSessionCatalog -Session $Session
-    $profile = Import-WinLeanProfile -Name $ProfileName -ProfileDirectory $Session.paths.profiles
-    $profileIssues = @(Test-WinLeanProfileRules -Profile $profile -Catalog $catalog)
+    $ruleProfile = Import-WinLeanProfile -Name $ProfileName -ProfileDirectory $Session.paths.profiles
+    $profileIssues = @(Test-WinLeanProfileRules -Profile $ruleProfile -Catalog $catalog)
     foreach ($issue in @($profileIssues | Where-Object { $_.severity -eq 'Warning' })) {
         Write-WinLeanLog -Logger $logger -Level WARN -Message $issue.message
     }
     $profileErrors = @($profileIssues | Where-Object { $_.severity -eq 'Error' })
     if ($profileErrors.Count -gt 0) {
-        throw (New-Object -TypeName System.IO.InvalidDataException -ArgumentList ("Profile '$($profile.name)' is invalid: " + (($profileErrors | ForEach-Object { $_.message }) -join ' ')))
+        throw (New-Object -TypeName System.IO.InvalidDataException -ArgumentList ("Profile '$($ruleProfile.name)' is invalid: " + (($profileErrors | ForEach-Object { $_.message }) -join ' ')))
     }
-    Write-WinLeanLog -Logger $logger -Message "Profile '$($profile.name)' loaded ($($profile.ruleIds.Count) rules)"
+    Write-WinLeanLog -Logger $logger -Message "Profile '$($ruleProfile.name)' loaded ($($ruleProfile.ruleIds.Count) rules)"
 
     $compatibility = Get-WinLeanSessionCompatibility -Session $Session
     $keys = @(Get-WinLeanKnownRequirementKeys -Session $Session)
 
     # Capabilities are only collected when a rule of the profile asks for one.
     $capabilities = New-WinLeanDictionary
-    $rules = @(foreach ($id in $profile.ruleIds) { $catalog.rules[$id] })
+    $rules = @(foreach ($id in $ruleProfile.ruleIds) { $catalog.rules[$id] })
     $capabilityFacts = @(Get-WinLeanRuleFactNames -Rules $rules | Where-Object { $_.StartsWith('capability.', [System.StringComparison]::Ordinal) })
     if ($capabilityFacts.Count -gt 0) {
         Write-WinLeanLog -Logger $logger -Message 'Detecting capabilities used by rule conditions'
@@ -405,7 +405,7 @@ function Invoke-WinLeanDryRun {
         -Compatibility (Get-WinLeanCompatibilitySummary -Compatibility $compatibility -KnownRequirementKeys $keys -Capabilities $capabilities) `
         -Warnings $warnings.ToArray() `
         -AllowUntestedBuild:$AllowUntestedBuild
-    $plan = New-WinLeanPlan -Profile $profile -Catalog $catalog -Context $context
+    $plan = New-WinLeanPlan -Profile $ruleProfile -Catalog $catalog -Context $context
     $plan | Add-Member -NotePropertyName 'planId' -NotePropertyValue $Session.runId
 
     $counts = $plan.summary.counts
@@ -413,7 +413,7 @@ function Invoke-WinLeanDryRun {
             $plan.summary.total, $counts.Applicable, $counts.AlreadySatisfied, $counts.Blocked, $counts.Skipped, $counts.RequiresConfirmation, $counts.Unsupported)
 
     if (-not $NoSave) {
-        $planPath = Join-Path -Path $Session.paths.reports -ChildPath ("Plans\{0}-{1}-plan.json" -f $Session.runId, $profile.name)
+        $planPath = Join-Path -Path $Session.paths.reports -ChildPath ("Plans\{0}-{1}-plan.json" -f $Session.runId, $ruleProfile.name)
         Write-WinLeanJsonFile -Path $planPath -InputObject $plan
         $plan | Add-Member -NotePropertyName 'planPath' -NotePropertyValue $planPath
         Write-WinLeanLog -Logger $logger -Level DEBUG -Message "Plan saved to $planPath"
@@ -447,8 +447,8 @@ function Test-WinLeanConfiguration {
     }
     foreach ($file in $profileFiles) {
         try {
-            $profile = Import-WinLeanProfile -Name $file -ProfileDirectory $Session.paths.profiles
-            foreach ($issue in @(Test-WinLeanProfileRules -Profile $profile -Catalog $catalog)) { $issues.Add($issue) }
+            $ruleProfile = Import-WinLeanProfile -Name $file -ProfileDirectory $Session.paths.profiles
+            foreach ($issue in @(Test-WinLeanProfileRules -Profile $ruleProfile -Catalog $catalog)) { $issues.Add($issue) }
         }
         catch {
             $issues.Add((New-WinLeanIssue -Severity Error -Code 'Profile' -Source $file -Message $_.Exception.Message))
@@ -487,17 +487,17 @@ function Get-WinLeanRules {
         [System.Array]::Sort($files, [System.StringComparer]::OrdinalIgnoreCase)
         foreach ($file in $files) {
             try {
-                $profile = Import-WinLeanProfile -Name $file -ProfileDirectory $Session.paths.profiles
+                $ruleProfile = Import-WinLeanProfile -Name $file -ProfileDirectory $Session.paths.profiles
             }
             catch {
                 Write-WinLeanLog -Logger $Session.logger -Level WARN -Message "Skipping profile '$file': $($_.Exception.Message)"
                 continue
             }
-            foreach ($id in $profile.ruleIds) {
+            foreach ($id in $ruleProfile.ruleIds) {
                 if (-not $membership.ContainsKey($id)) {
                     $membership[$id] = New-Object -TypeName System.Collections.Generic.List[string]
                 }
-                $membership[$id].Add($profile.name)
+                $membership[$id].Add($ruleProfile.name)
             }
         }
     }

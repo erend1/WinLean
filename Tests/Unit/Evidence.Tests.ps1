@@ -161,10 +161,10 @@ Describe 'Invoke-WinLeanEvidenceCapture' {
             $script:CapturePrompts = $prompts
             return Invoke-WinLeanEvidenceCapture -RuleId 'privacy.test.disable' -Setting 'Settings > Test | Toggle' -TargetState 'Off' -OriginalState 'On' `
                 -Path @($key) -BaselineSeconds 5 -Environment $Environment -ConfirmDisposableEnvironment:$ConfirmDisposableEnvironment `
-                -Snapshot { param($Paths, $Depth) $sequence.Dequeue() }.GetNewClosure() `
-                -Wait { param($Seconds) } `
+                -Snapshot { $sequence.Dequeue() }.GetNewClosure() `
+                -Wait { } `
                 -Prompt { param($Message) $prompts.Add($Message) }.GetNewClosure() `
-                -WriteLine { param($Line) }
+                -WriteLine { }
         }
     }
 

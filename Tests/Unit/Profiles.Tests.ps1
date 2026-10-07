@@ -19,18 +19,18 @@ Describe 'Import-WinLeanProfile' {
     It 'resolves inheritance with parent rules first' {
         Write-ProfileFile -Directory $directory -Name 'Base' -Rules @('privacy.a.disable', 'privacy.b.disable')
         Write-ProfileFile -Directory $directory -Name 'Child' -Extends 'Base' -Rules @('privacy.c.disable', 'privacy.a.disable') -MaxRisk 'Medium'
-        $profile = Import-WinLeanProfile -Name 'Child' -ProfileDirectory $directory
-        $profile.ruleIds | Should -Be @('privacy.a.disable', 'privacy.b.disable', 'privacy.c.disable')
-        $profile.chain | Should -Be @('Base', 'Child')
-        $profile.maxRisk | Should -Be 'Medium'
+        $ruleProfile = Import-WinLeanProfile -Name 'Child' -ProfileDirectory $directory
+        $ruleProfile.ruleIds | Should -Be @('privacy.a.disable', 'privacy.b.disable', 'privacy.c.disable')
+        $ruleProfile.chain | Should -Be @('Base', 'Child')
+        $ruleProfile.maxRisk | Should -Be 'Medium'
     }
 
     It 'removes excluded inherited rules and records them' {
         Write-ProfileFile -Directory $directory -Name 'Base' -Rules @('privacy.a.disable', 'privacy.b.disable')
         Write-ProfileFile -Directory $directory -Name 'Child' -Extends 'Base' -Exclude @('privacy.a.disable')
-        $profile = Import-WinLeanProfile -Name 'Child' -ProfileDirectory $directory
-        $profile.ruleIds | Should -Be @('privacy.b.disable')
-        $profile.excluded | Should -Be @('privacy.a.disable')
+        $ruleProfile = Import-WinLeanProfile -Name 'Child' -ProfileDirectory $directory
+        $ruleProfile.ruleIds | Should -Be @('privacy.b.disable')
+        $ruleProfile.excluded | Should -Be @('privacy.a.disable')
     }
 
     It 'accepts a path to a profile file' {
@@ -57,8 +57,8 @@ Describe 'Test-WinLeanProfileRules' {
         $irreversible = New-TestRule -Id 'privacy.forever.disable'
         $irreversible.reversible = $false
         $catalog = New-TestCatalog -Rules @($low, $medium, $irreversible)
-        $profile = New-TestProfile -RuleIds @('privacy.low.disable', 'privacy.medium.disable', 'privacy.forever.disable', 'privacy.unknown.disable') -MaxRisk 'Low'
-        $codes = @(Test-WinLeanProfileRules -Profile $profile -Catalog $catalog | ForEach-Object { $_.code })
+        $ruleProfile = New-TestProfile -RuleIds @('privacy.low.disable', 'privacy.medium.disable', 'privacy.forever.disable', 'privacy.unknown.disable') -MaxRisk 'Low'
+        $codes = @(Test-WinLeanProfileRules -Profile $ruleProfile -Catalog $catalog | ForEach-Object { $_.code })
         $codes | Should -Contain 'UnknownRule'
         $codes | Should -Contain 'RiskTooHigh'
         $codes | Should -Contain 'Irreversible'

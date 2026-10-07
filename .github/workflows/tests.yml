@@ -9,9 +9,13 @@ on:
 permissions:
   contents: read
 
+# Hosted runners are not disposable test machines for WinLean: nothing here applies a real
+# rule or profile. The Destructive suite (Tests/Destructive) is never run in this workflow
+# and must not be enabled here; it is for a disposable VM (Docs/VmValidation.md).
+# Tests/Unit/Repository.Tests.ps1 fails if this file references it.
 jobs:
   test:
-    name: Validation, unit and integration tests
+    name: Static analysis, validation, unit and integration tests
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -24,20 +28,26 @@ jobs:
           New-Item -ItemType Directory -Force -Path .tools/Modules | Out-Null
           Save-PSResource -Name Pester -Version '[5.5.0,6.0.0)' -Repository PSGallery -Path .tools/Modules -TrustRepository
 
+      # The analyzer version is pinned in the script so that results are reproducible.
+      - name: Static analysis (PSScriptAnalyzer, PowerShell 5.1 and 7 syntax)
+        shell: pwsh
+        run: ./Tests/Invoke-WinLeanAnalysis.ps1 -Bootstrap
+
       - name: Validate rules, profiles and configuration
         shell: pwsh
         run: ./WinLean.ps1 -Validate
 
-      # Integration tests write only to Pester's TestRegistry and TestDrive. The runner is
-      # Windows Server, where WinLean treats every rule as Unsupported; the sandbox
-      # apply/restore cycle therefore only runs on Windows 11 client machines.
+      # Integration tests write only to Pester's TestRegistry and TestDrive and read the
+      # system otherwise (inventory, optional feature state, access control lists). The
+      # runner is Windows Server, where WinLean treats every rule as Unsupported; the
+      # sandbox apply/restore cycle therefore only runs on Windows 11 client machines.
       - name: Unit and integration tests (PowerShell 7)
         shell: pwsh
         run: ./Tests/Invoke-WinLeanTests.ps1 -Suite All -OutputPath TestResults/pwsh.xml
 
-      - name: Unit tests (Windows PowerShell 5.1)
+      - name: Unit and integration tests (Windows PowerShell 5.1)
         shell: powershell
-        run: ./Tests/Invoke-WinLeanTests.ps1 -Suite Unit -OutputPath TestResults/windowspowershell.xml
+        run: ./Tests/Invoke-WinLeanTests.ps1 -Suite All -OutputPath TestResults/windowspowershell.xml
 
       - name: Upload test results
         if: always()

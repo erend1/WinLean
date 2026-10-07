@@ -149,27 +149,27 @@ function Test-WinLeanProfileRules {
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)] [PSTypeName('WinLean.Profile')] $Profile,
+        [Parameter(Mandatory)] [Alias('Profile')] [PSTypeName('WinLean.Profile')] $RuleProfile,
         [Parameter(Mandatory)] [PSTypeName('WinLean.RuleCatalog')] $Catalog
     )
 
-    $maxRank = Get-WinLeanRiskRank -Risk $Profile.maxRisk
-    foreach ($id in $Profile.ruleIds) {
+    $maxRank = Get-WinLeanRiskRank -Risk $RuleProfile.maxRisk
+    foreach ($id in $RuleProfile.ruleIds) {
         if (-not $Catalog.rules.ContainsKey($id)) {
-            New-WinLeanIssue -Severity Error -Code 'UnknownRule' -Source $Profile.name -Message "Profile '$($Profile.name)' references unknown rule '$id'."
+            New-WinLeanIssue -Severity Error -Code 'UnknownRule' -Source $RuleProfile.name -Message "Profile '$($RuleProfile.name)' references unknown rule '$id'."
             continue
         }
         $rule = $Catalog.rules[$id]
         if ((Get-WinLeanRiskRank -Risk $rule.risk) -gt $maxRank) {
-            New-WinLeanIssue -Severity Error -Code 'RiskTooHigh' -Source $Profile.name -Message "Rule '$id' has risk $($rule.risk), above the profile maximum $($Profile.maxRisk)."
+            New-WinLeanIssue -Severity Error -Code 'RiskTooHigh' -Source $RuleProfile.name -Message "Rule '$id' has risk $($rule.risk), above the profile maximum $($RuleProfile.maxRisk)."
         }
-        if (-not $rule.reversible -and -not $Profile.allowIrreversible) {
-            New-WinLeanIssue -Severity Error -Code 'Irreversible' -Source $Profile.name -Message "Rule '$id' is irreversible and the profile does not allow irreversible rules."
+        if (-not $rule.reversible -and -not $RuleProfile.allowIrreversible) {
+            New-WinLeanIssue -Severity Error -Code 'Irreversible' -Source $RuleProfile.name -Message "Rule '$id' is irreversible and the profile does not allow irreversible rules."
         }
     }
-    foreach ($id in $Profile.excluded) {
+    foreach ($id in $RuleProfile.excluded) {
         if (-not $Catalog.rules.ContainsKey($id)) {
-            New-WinLeanIssue -Severity Warning -Code 'UnknownRule' -Source $Profile.name -Message "Excluded rule '$id' is not a known rule."
+            New-WinLeanIssue -Severity Warning -Code 'UnknownRule' -Source $RuleProfile.name -Message "Excluded rule '$id' is not a known rule."
         }
     }
 }
@@ -339,20 +339,20 @@ function New-WinLeanPlan {
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)] [PSTypeName('WinLean.Profile')] $Profile,
+        [Parameter(Mandatory)] [Alias('Profile')] [PSTypeName('WinLean.Profile')] $RuleProfile,
         [Parameter(Mandatory)] [PSTypeName('WinLean.RuleCatalog')] $Catalog,
         [Parameter(Mandatory)] [PSTypeName('WinLean.PlanContext')] $Context
     )
 
-    $unknown = @($Profile.ruleIds | Where-Object { -not $Catalog.rules.ContainsKey($_) })
+    $unknown = @($RuleProfile.ruleIds | Where-Object { -not $Catalog.rules.ContainsKey($_) })
     if ($unknown.Count -gt 0) {
-        throw (New-Object -TypeName System.IO.InvalidDataException -ArgumentList "Profile '$($Profile.name)' references unknown rules: $($unknown -join ', ').")
+        throw (New-Object -TypeName System.IO.InvalidDataException -ArgumentList "Profile '$($RuleProfile.name)' references unknown rules: $($unknown -join ', ').")
     }
 
     $facts = $Context.facts
     $build = if (Test-WinLeanDictionaryKey -Dictionary $facts -Key 'system.build') { $facts['system.build'] } else { $null }
     $items = New-WinLeanDictionary
-    $rules = @(foreach ($id in $Profile.ruleIds) { $Catalog.rules[$id] })
+    $rules = @(foreach ($id in $RuleProfile.ruleIds) { $Catalog.rules[$id] })
 
     # 1-3: applicability and current state, rule by rule.
     foreach ($rule in $rules) {
@@ -535,12 +535,12 @@ function New-WinLeanPlan {
         createdAt      = Get-WinLeanTimestamp
         winLeanVersion = Get-WinLeanVersion
         profile        = [pscustomobject]@{
-            name     = $Profile.name
-            source   = $Profile.source
-            chain    = $Profile.chain
-            maxRisk  = $Profile.maxRisk
-            ruleIds  = $Profile.ruleIds
-            excluded = $Profile.excluded
+            name     = $RuleProfile.name
+            source   = $RuleProfile.source
+            chain    = $RuleProfile.chain
+            maxRisk  = $RuleProfile.maxRisk
+            ruleIds  = $RuleProfile.ruleIds
+            excluded = $RuleProfile.excluded
         }
         system         = $Context.platform
         session        = [pscustomobject]@{

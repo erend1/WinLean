@@ -935,6 +935,7 @@ function Test-WinLeanProfileDefinition {
     .PARAMETER ExpectedName
         When given (the file base name), the profile 'name' must match it.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Source', Justification = 'Used by the nested addError script block.')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)] [AllowNull()] $Definition,

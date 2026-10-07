@@ -24,7 +24,7 @@ Describe 'Shipped rules' {
         $script:Catalog.ruleIds.Count | Should -BeGreaterOrEqual 5
     }
 
-    It 'are all low risk and reversible in milestone 0.1' {
+    It 'are all low risk and reversible' {
         foreach ($id in $script:Catalog.ruleIds) {
             $rule = $script:Catalog.rules[$id]
             $rule.risk | Should -Be 'Low' -Because $id
@@ -77,8 +77,8 @@ Describe 'Shipped rules' {
 Describe 'Shipped profiles' {
     It 'resolve and reference only known rules within their risk limit' {
         foreach ($file in Get-ChildItem -LiteralPath $script:ProfileDirectory -Filter '*.json') {
-            $profile = Import-WinLeanProfile -Name $file.FullName -ProfileDirectory $script:ProfileDirectory
-            @(Test-WinLeanProfileRules -Profile $profile -Catalog $script:Catalog) | Should -BeNullOrEmpty -Because $file.Name
+            $ruleProfile = Import-WinLeanProfile -Name $file.FullName -ProfileDirectory $script:ProfileDirectory
+            @(Test-WinLeanProfileRules -Profile $ruleProfile -Catalog $script:Catalog) | Should -BeNullOrEmpty -Because $file.Name
         }
     }
 
@@ -112,11 +112,11 @@ Describe 'Shipped profiles' {
         # compatibility condition, a satisfied source standard, a tested provider and a
         # successful apply/verify/restore in a disposable VM.
         foreach ($file in Get-ChildItem -LiteralPath $script:ProfileDirectory -Filter '*.json') {
-            $profile = Import-WinLeanProfile -Name $file.FullName -ProfileDirectory $script:ProfileDirectory
-            foreach ($id in $profile.ruleIds) {
+            $ruleProfile = Import-WinLeanProfile -Name $file.FullName -ProfileDirectory $script:ProfileDirectory
+            foreach ($id in $ruleProfile.ruleIds) {
                 $rule = $script:Catalog.rules[$id]
                 if ((Get-WinLeanRiskRank -Risk $rule.risk) -ge 1) {
-                    $rule.vmValidated | Should -BeTrue -Because "$id ($($rule.risk)) is part of profile $($profile.name)"
+                    $rule.vmValidated | Should -BeTrue -Because "$id ($($rule.risk)) is part of profile $($ruleProfile.name)"
                 }
             }
         }
@@ -162,6 +162,26 @@ Describe 'Schemas and configuration' {
     }
 }
 
+Describe 'Continuous integration and static analysis' {
+    It 'never runs the destructive suite on hosted runners' {
+        $workflows = @(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot '.github\workflows') -File | Where-Object { $_.Extension -in @('.yml', '.yaml') })
+        $workflows.Count | Should -BeGreaterThan 0
+        foreach ($workflow in $workflows) {
+            $content = Get-Content -Raw -LiteralPath $workflow.FullName
+            $content | Should -Not -Match 'WINLEAN_ALLOW_DESTRUCTIVE_TESTS' -Because "$($workflow.Name) must not enable destructive tests"
+            $content | Should -Not -Match '-Suite\s+Destructive' -Because "$($workflow.Name) must not run destructive tests"
+        }
+    }
+
+    It 'excludes only the analyzer rules that are documented in the settings file' {
+        $settings = Import-PowerShellDataFile -LiteralPath (Join-Path $script:RepoRoot 'PSScriptAnalyzerSettings.psd1')
+        @($settings.ExcludeRules | Sort-Object) | Should -Be @('PSUseShouldProcessForStateChangingFunctions', 'PSUseSingularNouns')
+        $settings.Severity | Should -Contain 'Error'
+        $settings.Severity | Should -Contain 'Warning'
+        $settings.Rules.PSUseCompatibleSyntax.TargetVersions | Should -Contain '5.1'
+    }
+}
+
 Describe 'Source files' {
     It 'are ASCII only, so Windows PowerShell 5.1 reads them correctly without a BOM' {
         # Filter by extension explicitly: Windows PowerShell 5.1 ignores -Include with -LiteralPath.
@@ -191,6 +211,22 @@ Describe 'Source files' {
                 }
             })
         $offenders | Should -BeNullOrEmpty
+    }
+
+    It 'support -WhatIf in every function that changes Windows' {
+        # Replaces the name-based analyzer rule PSUseShouldProcessForStateChangingFunctions
+        # (excluded in PSScriptAnalyzerSettings.psd1) with an exact requirement: the Set and
+        # Restore operation of every registered provider, and the low-level functions that
+        # write to the system.
+        $providersModule = Get-Module -All | Where-Object { $_.Name -eq 'WinLean.Providers' } | Select-Object -First 1
+        $names = New-Object -TypeName System.Collections.Generic.List[string]
+        foreach ($name in @(& $providersModule { foreach ($type in $script:Providers.Keys) { $script:Providers[$type]['Set']; $script:Providers[$type]['Restore'] } })) { $names.Add($name) }
+        foreach ($name in @('Write-WinLeanRegistryValue', 'Remove-WinLeanRegistryValue', 'Remove-WinLeanRegistryKeyIfEmpty', 'Invoke-WinLeanOptionalFeatureChange')) { $names.Add($name) }
+        $names.Count | Should -BeGreaterOrEqual 10
+        foreach ($name in $names) {
+            $command = & $providersModule { param($n) Get-Command -Name $n -ErrorAction Stop } $name
+            $command.Parameters.ContainsKey('WhatIf') | Should -BeTrue -Because "$name changes Windows state"
+        }
     }
 
     It 'enable strict mode in every module' {

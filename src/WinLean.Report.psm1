@@ -158,7 +158,7 @@ function Format-WinLeanAnalysisText {
     ''
     'Security (recorded only; WinLean never weakens it)'
     if ($null -eq $security) {
-        Format-WinLeanLabel -Label 'Security state' -Value (Format-WinLeanSectionValue -Section $sections.security -Formatter { param($d) '' })
+        Format-WinLeanLabel -Label 'Security state' -Value (Format-WinLeanSectionValue -Section $sections.security -Formatter { '' })
     }
     else {
         Format-WinLeanLabel -Label 'Microsoft Defender' -Value (Format-WinLeanSectionValue -Section $security.defender -Formatter {

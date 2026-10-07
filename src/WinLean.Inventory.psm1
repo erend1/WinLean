@@ -257,7 +257,7 @@ function ConvertTo-WinLeanIsoTime {
     return [string]$Value
 }
 
-function Sort-WinLeanByName {
+function Get-WinLeanSortedByName {
     <#
     .SYNOPSIS
         Ordinal, case-insensitive sort of objects by a string property (culture independent).
@@ -487,6 +487,7 @@ function Get-WinLeanSystemInventory {
     .SYNOPSIS
         Windows edition, version and build, architecture, CPU, RAM, GPU, board and firmware.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'IsAdministrator', Justification = 'Every inventory collector is called with the same parameters.')]
     [CmdletBinding()]
     param([bool] $IsAdministrator)
 
@@ -668,6 +669,7 @@ function Get-WinLeanHardwareInventory {
     .SYNOPSIS
         Hardware facts used for capability detection: Bluetooth adapters, battery, printers.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'IsAdministrator', Justification = 'Every inventory collector is called with the same parameters.')]
     [CmdletBinding()]
     param([bool] $IsAdministrator)
 
@@ -745,6 +747,7 @@ function Get-WinLeanAppxInventory {
     .SYNOPSIS
         AppX / MSIX packages installed for the current user.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'IsAdministrator', Justification = 'Every inventory collector is called with the same parameters.')]
     [CmdletBinding()]
     param([bool] $IsAdministrator)
 
@@ -763,7 +766,7 @@ function Get-WinLeanAppxInventory {
     return [pscustomobject]@{
         scope    = 'CurrentUser'
         count    = $packages.Count
-        packages = @(Sort-WinLeanByName -InputObject $packages)
+        packages = @(Get-WinLeanSortedByName -InputObject $packages)
     }
 }
 
@@ -787,7 +790,7 @@ function Get-WinLeanProvisionedAppxInventory {
         })
     return [pscustomobject]@{
         count    = $packages.Count
-        packages = @(Sort-WinLeanByName -InputObject $packages)
+        packages = @(Get-WinLeanSortedByName -InputObject $packages)
     }
 }
 
@@ -800,6 +803,7 @@ function Get-WinLeanWin32ApplicationInventory {
         consistency checks (and possible repairs) for every MSI product.
         System components, updates and child entries are excluded, like in Settings.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'IsAdministrator', Justification = 'Every inventory collector is called with the same parameters.')]
     [CmdletBinding()]
     param([bool] $IsAdministrator)
 
@@ -864,7 +868,7 @@ function Get-WinLeanWin32ApplicationInventory {
 
     return [pscustomobject]@{
         count        = $applications.Count
-        applications = @(Sort-WinLeanByName -InputObject $applications.ToArray())
+        applications = @(Get-WinLeanSortedByName -InputObject $applications.ToArray())
     }
 }
 
@@ -876,6 +880,7 @@ function Get-WinLeanWinGetInventory {
         Only packages that WinGet can match to a source are exported. WinGet may refresh
         its source index while doing this, so the section can take tens of seconds.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'IsAdministrator', Justification = 'Every inventory collector is called with the same parameters.')]
     [CmdletBinding()]
     param([bool] $IsAdministrator)
 
@@ -909,7 +914,7 @@ function Get-WinLeanWinGetInventory {
         return [pscustomobject]@{
             wingetVersion = [string](Get-WinLeanProperty -InputObject $export -Name 'WinGetVersion')
             count         = $packages.Count
-            packages      = @(Sort-WinLeanByName -InputObject $packages -Property 'id')
+            packages      = @(Get-WinLeanSortedByName -InputObject $packages -Property 'id')
         }
     }
     finally {
@@ -924,6 +929,7 @@ function Get-WinLeanOptionalFeatureInventory {
     .SYNOPSIS
         Optional Windows features and their state (Win32_OptionalFeature; no elevation needed).
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'IsAdministrator', Justification = 'Every inventory collector is called with the same parameters.')]
     [CmdletBinding()]
     param([bool] $IsAdministrator)
 
@@ -939,7 +945,7 @@ function Get-WinLeanOptionalFeatureInventory {
         source       = 'Win32_OptionalFeature'
         count        = $features.Count
         enabledCount = @($features | Where-Object { $_.state -eq 'Enabled' }).Count
-        features     = @(Sort-WinLeanByName -InputObject $features)
+        features     = @(Get-WinLeanSortedByName -InputObject $features)
     }
 }
 
@@ -949,6 +955,7 @@ function Get-WinLeanStartupInventory {
         Startup entries from the Run/RunOnce registry keys and the startup folders, with the
         enabled/disabled choice recorded by Task Manager (StartupApproved).
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'IsAdministrator', Justification = 'Every inventory collector is called with the same parameters.')]
     [CmdletBinding()]
     param([bool] $IsAdministrator)
 
@@ -1102,6 +1109,7 @@ function Get-WinLeanServiceInventory {
         Vendor classification reads CompanyName from the service binary, or from the
         ServiceDll for services hosted in svchost.exe. This is a heuristic.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'IsAdministrator', Justification = 'Every inventory collector is called with the same parameters.')]
     [CmdletBinding()]
     param([bool] $IsAdministrator)
 
@@ -1141,7 +1149,7 @@ function Get-WinLeanServiceInventory {
         runningThirdPartyCount = @($running | Where-Object { $_.vendor -eq 'ThirdParty' }).Count
         runningUnknownCount    = @($running | Where-Object { $_.vendor -eq 'Unknown' }).Count
         vendorMethod           = 'Heuristic: CompanyName of the service binary (or ServiceDll for svchost services), falling back to the organization of a valid Authenticode signature.'
-        services               = @(Sort-WinLeanByName -InputObject $services)
+        services               = @(Get-WinLeanSortedByName -InputObject $services)
     }
 }
 
@@ -1194,7 +1202,7 @@ function Get-WinLeanScheduledTaskInventory {
         count       = $tasks.Count
         complete    = $IsAdministrator
         stateCounts = [pscustomobject]$stateCounts
-        tasks       = @(Sort-WinLeanByName -InputObject $tasks -Property 'path')
+        tasks       = @(Get-WinLeanSortedByName -InputObject $tasks -Property 'path')
     }
 }
 

@@ -103,6 +103,7 @@
     unexpected error, 2 invalid input or configuration (unknown profile, invalid rule, no
     backup to restore), 3 cancelled at the confirmation prompt.
 #>
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The command switches select the parameter set.')]
 [CmdletBinding(DefaultParameterSetName = 'Help', SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [Parameter(Mandatory, ParameterSetName = 'Analyze')]
